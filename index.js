@@ -830,6 +830,16 @@ function getHistory(chatId) {
 // ========================
 // Exportar para Vercel
 // ========================
+console.log("🚀 Aplicación iniciada - Rutas registradas:");
+console.log("  ✓ GET /");
+console.log("  ✓ GET /health");
+console.log("  ✓ GET /test-admin");
+console.log("  ✓ GET /admin");
+console.log("  ✓ GET /api/config");
+console.log("  ✓ POST /api/config");
+console.log("  ✓ POST /api/auth");
+console.log("  ✓ POST /webhook");
+
 module.exports = app;
 
 // Para desarrollo local (opcional)
