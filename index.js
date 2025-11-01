@@ -20,6 +20,15 @@ if (!TELEGRAM_TOKEN || !OPENAI_API_KEY) {
   console.error("❌ ERROR: Faltan variables de entorno requeridas (TELEGRAM_TOKEN, OPENAI_API_KEY)");
   console.error("TELEGRAM_TOKEN:", TELEGRAM_TOKEN ? "✓ Configurado" : "✗ FALTA");
   console.error("OPENAI_API_KEY:", OPENAI_API_KEY ? "✓ Configurado" : "✗ FALTA");
+} else {
+  // Validar formato de las keys
+  if (!TELEGRAM_TOKEN.includes(":")) {
+    console.error("⚠️ ADVERTENCIA: TELEGRAM_TOKEN parece tener formato incorrecto (debe contener ':')");
+  }
+  if (!OPENAI_API_KEY.startsWith("sk-")) {
+    console.error("⚠️ ADVERTENCIA: OPENAI_API_KEY parece tener formato incorrecto (debe comenzar con 'sk-')");
+    console.error("Primeros caracteres:", OPENAI_API_KEY.substring(0, 10) + "...");
+  }
 }
 
 // ========================
