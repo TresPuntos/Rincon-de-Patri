@@ -4,6 +4,8 @@
 const express = require("express");
 const axios = require("axios");
 const path = require("path");
+const fs = require("fs");
+const pdf = require("pdf-parse");
 require("dotenv").config();
 
 // Intentar importar Vercel KV y Blob (opcionales)
@@ -65,6 +67,58 @@ const conversationHistory = new Map(); // chatId -> array de mensajes
 
 // Máximo de mensajes a mantener por conversación (para no exceder límites de tokens)
 const MAX_HISTORY_MESSAGES = 10;
+
+// Cargar contenido de los PDFs de instrucciones (una vez al iniciar)
+let instructionDocs = "";
+async function loadInstructionDocs() {
+  try {
+    const pdfFiles = [
+      "Bot_Patri_Instrucciones/01_Instrucciones_Base.pdf",
+      "Bot_Patri_Instrucciones/02_Personalidad.pdf",
+      "Bot_Patri_Instrucciones/03_Conversaciones.pdf",
+      "Bot_Patri_Instrucciones/04_Respuestas_Situaciones.pdf"
+    ];
+    
+    const texts = [];
+    for (const pdfPath of pdfFiles) {
+      try {
+        // Intentar diferentes rutas
+        const possiblePaths = [
+          path.join(__dirname, pdfPath),
+          path.join(process.cwd(), pdfPath),
+          pdfPath
+        ];
+        
+        let found = false;
+        for (const p of possiblePaths) {
+          if (fs.existsSync(p)) {
+            const dataBuffer = fs.readFileSync(p);
+            const data = await pdf(dataBuffer);
+            texts.push(`\n=== ${path.basename(pdfPath)} ===\n${data.text}\n`);
+            found = true;
+            console.log(`✅ PDF cargado: ${pdfPath}`);
+            break;
+          }
+        }
+        if (!found) {
+          console.warn(`⚠️ PDF no encontrado: ${pdfPath}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Error al leer ${pdfPath}:`, error.message);
+      }
+    }
+    
+    instructionDocs = texts.join("\n");
+    if (instructionDocs) {
+      console.log("✅ Documentos de instrucciones cargados correctamente");
+    }
+  } catch (error) {
+    console.warn("⚠️ Error al cargar documentos de instrucciones:", error.message);
+  }
+}
+
+// Cargar documentos al iniciar (si están disponibles)
+loadInstructionDocs();
 
 // ========================
 // Health Check
@@ -502,13 +556,26 @@ async function getBotConfig() {
     }
     // Configuración por defecto
     return {
-      systemPrompt: `Eres un psicólogo virtual amable, empático y profesional. 
-Escuchas atentamente, haces preguntas reflexivas y ofreces apoyo emocional. 
-Mantén tus respuestas concisas (máximo 200 palabras) pero cálidas.`,
+      systemPrompt: `Eres El Rincón de Patri, un GPT diseñado para ofrecer apoyo emocional cercano y empático a Patri.
+
+Tu función principal es ayudar a Patri a gestionar momentos de ansiedad o sobreestimulación. Para ello, debes:
+
+1. Escuchar a Patri con atención.
+2. Identificar su estado emocional y sus necesidades.
+3. Ofrecerle técnicas de calma personalizadas, como ejercicios de respiración, grounding o visualizaciones.
+
+Recuerda siempre actuar con empatía y calidez, manteniendo un tono de apoyo y tranquilidad.
+
+INFORMACIÓN ADICIONAL (si está disponible en el contexto):
+- Personalidad y estilo de comunicación preferido de Patri
+- Guías de conversación y manejo de situaciones
+- Respuestas para situaciones específicas
+
+Mantén tus respuestas concisas pero cálidas, adaptándote siempre a las necesidades emocionales del momento.`,
       model: "gpt-3.5-turbo",
       maxTokens: 300,
       temperature: 0.7,
-      welcomeMessage: "👋 Hola, soy tu psicólogo virtual. Estoy aquí para escucharte y ayudarte. ¿En qué puedo ayudarte hoy?"
+      welcomeMessage: "👋 Hola Patri, soy tu Rincón. Estoy aquí para escucharte y apoyarte. ¿Cómo te sientes hoy?"
     };
   } catch (error) {
     console.error("Error al obtener configuración:", error);
@@ -739,8 +806,14 @@ async function generateResponse(message, history) {
     // Obtener configuración del bot (desde KV o memoria)
     const config = await getBotConfig();
     
+    // Construir el prompt del sistema con instrucciones adicionales
+    let systemPrompt = config.systemPrompt;
+    if (instructionDocs) {
+      systemPrompt += `\n\n=== CONTEXTO E INSTRUCCIONES ADICIONALES ===\n${instructionDocs}\n=== FIN DEL CONTEXTO ===\n`;
+    }
+    
     const messages = [
-      { role: "system", content: config.systemPrompt },
+      { role: "system", content: systemPrompt },
     ];
 
     // Añadir historial si existe
@@ -774,7 +847,7 @@ async function generateResponse(message, history) {
     let response = completion.data.choices[0].message.content.trim();
 
     // Añadir firma al final (opcional)
-    response += "\n\n💬 Tu psicólogo virtual";
+    response += "\n\n💬 Tu Rincón";
 
     return response;
   } catch (error) {

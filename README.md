@@ -105,6 +105,8 @@ Bot de psicólogo virtual para Telegram usando OpenAI GPT-3.5-turbo, desplegado 
 ├── index.js          # Código principal del bot
 ├── package.json      # Dependencias del proyecto
 ├── vercel.json       # Configuración de Vercel
+├── public/           # Archivos estáticos
+│   └── admin.html    # Panel de administración
 ├── .env.example      # Template de variables de entorno
 └── README.md         # Este archivo
 ```
