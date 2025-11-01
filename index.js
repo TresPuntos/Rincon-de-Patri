@@ -697,7 +697,8 @@ app.post("/api/config", requireAuth, async (req, res) => {
       model: req.body.model || "gpt-3.5-turbo",
       maxTokens: parseInt(req.body.maxTokens) || 300,
       temperature: parseFloat(req.body.temperature) || 0.7,
-      welcomeMessage: req.body.welcomeMessage || ""
+      welcomeMessage: req.body.welcomeMessage || "",
+      botVersion: req.body.botVersion || "V.1.1"
     };
     await saveBotConfig(config);
     res.json({ success: true, config });
