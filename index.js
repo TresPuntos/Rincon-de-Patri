@@ -3,17 +3,44 @@
 
 const express = require("express");
 const axios = require("axios");
+const path = require("path");
 require("dotenv").config();
+
+// Intentar importar Vercel KV y Blob (opcionales)
+let kv = null;
+let put = null;
+let del = null;
+let list = null;
+try {
+  const { kv: kvClient } = require("@vercel/kv");
+  kv = kvClient;
+} catch (e) {
+  console.warn("⚠️ Vercel KV no disponible, usando almacenamiento en memoria");
+}
+
+try {
+  const { put: putBlob, del: delBlob, list: listBlobs } = require("@vercel/blob");
+  put = putBlob;
+  del = delBlob;
+  list = listBlobs;
+} catch (e) {
+  console.warn("⚠️ Vercel Blob no disponible para almacenar documentos");
+}
 
 const app = express();
 
 // Middleware
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Servir archivos estáticos (para el panel de admin)
+app.use(express.static("public"));
 
 // Variables de entorno
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_URL = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123"; // Cambia esto en producción
 
 // Validar variables de entorno
 if (!TELEGRAM_TOKEN || !OPENAI_API_KEY) {
@@ -58,6 +85,167 @@ app.get("/health", (req, res) => {
 });
 
 // ========================
+// Panel de Administración
+// ========================
+app.get("/admin", (req, res) => {
+  res.sendFile(path.join(__dirname, "public", "admin.html"));
+});
+
+// ========================
+// Autenticación del Panel
+// ========================
+function requireAuth(req, res, next) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== `Bearer ${ADMIN_PASSWORD}`) {
+    return res.status(401).json({ error: "No autorizado" });
+  }
+  next();
+}
+
+// ========================
+// API: Configuración del Bot
+// ========================
+async function getBotConfig() {
+  try {
+    if (kv) {
+      const config = await kv.get("bot:config");
+      if (config) return config;
+    }
+    // Si no hay KV, usar variable global (si existe)
+    if (global.botConfig) {
+      return global.botConfig;
+    }
+    // Configuración por defecto
+    return {
+      systemPrompt: `Eres un psicólogo virtual amable, empático y profesional. 
+Escuchas atentamente, haces preguntas reflexivas y ofreces apoyo emocional. 
+Mantén tus respuestas concisas (máximo 200 palabras) pero cálidas.`,
+      model: "gpt-3.5-turbo",
+      maxTokens: 300,
+      temperature: 0.7,
+      welcomeMessage: "👋 Hola, soy tu psicólogo virtual. Estoy aquí para escucharte y ayudarte. ¿En qué puedo ayudarte hoy?"
+    };
+  } catch (error) {
+    console.error("Error al obtener configuración:", error);
+    throw error;
+  }
+}
+
+async function saveBotConfig(config) {
+  try {
+    if (kv) {
+      await kv.set("bot:config", config);
+      return true;
+    }
+    // Si no hay KV, usar variable global (solo en memoria)
+    global.botConfig = config;
+    return true;
+  } catch (error) {
+    console.error("Error al guardar configuración:", error);
+    throw error;
+  }
+}
+
+app.get("/api/config", requireAuth, async (req, res) => {
+  try {
+    const config = await getBotConfig();
+    res.json(config);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/config", requireAuth, async (req, res) => {
+  try {
+    const config = {
+      systemPrompt: req.body.systemPrompt || "",
+      model: req.body.model || "gpt-3.5-turbo",
+      maxTokens: parseInt(req.body.maxTokens) || 300,
+      temperature: parseFloat(req.body.temperature) || 0.7,
+      welcomeMessage: req.body.welcomeMessage || ""
+    };
+    await saveBotConfig(config);
+    res.json({ success: true, config });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================
+// API: Documentos
+// ========================
+app.get("/api/documents", requireAuth, async (req, res) => {
+  try {
+    if (!list) {
+      return res.json({ documents: [] });
+    }
+    const { blobs } = await list({ prefix: "documents/" });
+    const documents = blobs.map(blob => ({
+      url: blob.url,
+      pathname: blob.pathname,
+      size: blob.size,
+      uploadedAt: blob.uploadedAt
+    }));
+    res.json({ documents });
+  } catch (error) {
+    console.error("Error al listar documentos:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.post("/api/documents", requireAuth, async (req, res) => {
+  try {
+    if (!put) {
+      return res.status(503).json({ error: "Vercel Blob Storage no está configurado" });
+    }
+
+    // Para subir archivos, necesitamos usar multipart/form-data
+    // Por simplicidad, aceptamos archivos base64 o URLs
+    const { filename, content, contentType } = req.body;
+    
+    if (!filename || !content) {
+      return res.status(400).json({ error: "Se requiere filename y content" });
+    }
+
+    const buffer = Buffer.from(content, 'base64');
+    const blob = await put(`documents/${filename}`, buffer, {
+      access: 'public',
+      contentType: contentType || 'application/octet-stream'
+    });
+
+    res.json({ success: true, url: blob.url });
+  } catch (error) {
+    console.error("Error al subir documento:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.delete("/api/documents/:path", requireAuth, async (req, res) => {
+  try {
+    if (!del) {
+      return res.status(503).json({ error: "Vercel Blob Storage no está configurado" });
+    }
+    
+    const pathname = `documents/${req.params.path}`;
+    await del(pathname);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error al eliminar documento:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint para autenticación
+app.post("/api/auth", (req, res) => {
+  const { password } = req.body;
+  if (password === ADMIN_PASSWORD) {
+    res.json({ token: ADMIN_PASSWORD });
+  } else {
+    res.status(401).json({ error: "Contraseña incorrecta" });
+  }
+});
+
+// ========================
 // Webhook de Telegram
 // ========================
 app.post("/webhook", async (req, res) => {
@@ -81,10 +269,9 @@ app.post("/webhook", async (req, res) => {
       // Responder a /start
       if (userText === "/start") {
         console.log("🚀 Comando /start recibido");
-        await sendTelegramMessage(
-          chatId,
-          "👋 Hola, soy tu psicólogo virtual. Estoy aquí para escucharte y ayudarte. ¿En qué puedo ayudarte hoy?"
-        );
+        const config = await getBotConfig();
+        const welcomeMsg = config.welcomeMessage || "👋 Hola, soy tu psicólogo virtual. Estoy aquí para escucharte y ayudarte. ¿En qué puedo ayudarte hoy?";
+        await sendTelegramMessage(chatId, welcomeMsg);
       } else {
         console.log("⚠️ Mensaje ignorado (sin texto o comando no reconocido)");
       }
@@ -164,13 +351,11 @@ async function sendTelegramMessage(chatId, text) {
 // ========================
 async function generateResponse(message, history) {
   try {
-    // Construir el prompt con historial
-    const systemPrompt = `Eres un psicólogo virtual amable, empático y profesional. 
-Escuchas atentamente, haces preguntas reflexivas y ofreces apoyo emocional. 
-Mantén tus respuestas concisas (máximo 200 palabras) pero cálidas.`;
-
+    // Obtener configuración del bot (desde KV o memoria)
+    const config = await getBotConfig();
+    
     const messages = [
-      { role: "system", content: systemPrompt },
+      { role: "system", content: config.systemPrompt },
     ];
 
     // Añadir historial si existe
@@ -188,10 +373,10 @@ Mantén tus respuestas concisas (máximo 200 palabras) pero cálidas.`;
     const completion = await axios.post(
       "https://api.openai.com/v1/chat/completions",
       {
-        model: "gpt-3.5-turbo",
+        model: config.model,
         messages: messages,
-        max_tokens: 300,
-        temperature: 0.7,
+        max_tokens: config.maxTokens,
+        temperature: config.temperature,
       },
       {
         headers: {

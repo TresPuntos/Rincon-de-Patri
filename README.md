@@ -71,6 +71,7 @@ Bot de psicólogo virtual para Telegram usando OpenAI GPT-3.5-turbo, desplegado 
    - Añade estas variables:
      - `TELEGRAM_TOKEN`: tu token de Telegram
      - `OPENAI_API_KEY`: tu API key de OpenAI
+     - `ADMIN_PASSWORD`: contraseña para el panel de administración (opcional, por defecto: `admin123`)
 
 4. **Obtén la URL de Vercel**
    - Una vez desplegado, Vercel te dará una URL como: `https://tu-proyecto.vercel.app`
@@ -113,6 +114,12 @@ Bot de psicólogo virtual para Telegram usando OpenAI GPT-3.5-turbo, desplegado 
 - `GET /` - Health check básico
 - `GET /health` - Health check alternativo
 - `POST /webhook` - Endpoint para recibir mensajes de Telegram
+- `GET /admin` - Panel de administración
+- `GET /api/config` - Obtener configuración del bot (requiere autenticación)
+- `POST /api/config` - Guardar configuración del bot (requiere autenticación)
+- `GET /api/documents` - Listar documentos (requiere autenticación)
+- `POST /api/documents` - Subir documento (requiere autenticación)
+- `DELETE /api/documents/:path` - Eliminar documento (requiere autenticación)
 
 ## 💾 Almacenamiento
 
@@ -156,13 +163,36 @@ En `index.js`, línea donde se llama a la API, puedes cambiar:
 model: "gpt-3.5-turbo",  // Cambiar a "gpt-4" para respuestas más avanzadas
 ```
 
-### Modificar el prompt del psicólogo
+### Panel de Administración
 
-Edita el `systemPrompt` en la función `generateResponse()` en `index.js`.
+El bot incluye un panel de administración completo donde puedes:
 
-### Ajustar el máximo de tokens
+1. **Configurar el prompt del psicólogo** - Personaliza cómo se comporta el bot
+2. **Cambiar el mensaje de bienvenida** - Personaliza el mensaje `/start`
+3. **Ajustar parámetros de OpenAI** - Modelo, tokens, temperatura
+4. **Subir documentos** - Comparte documentos que el bot puede usar como referencia
 
-Cambia `max_tokens` en la llamada a OpenAI (línea ~116 en `index.js`).
+**Para acceder al panel:**
+
+1. Ve a `https://tu-proyecto.vercel.app/admin`
+2. Ingresa la contraseña (por defecto: `admin123`)
+3. Configura la variable de entorno `ADMIN_PASSWORD` en Vercel para cambiar la contraseña
+
+**Configurar Vercel KV y Blob Storage (Recomendado):**
+
+Para que la configuración y documentos persistan:
+
+1. **Vercel KV (para configuración):**
+   - Ve a tu proyecto en Vercel Dashboard
+   - Settings → Storage → Create Database → Vercel KV
+   - Se añadirá automáticamente como variable de entorno
+
+2. **Vercel Blob (para documentos):**
+   - Ve a tu proyecto en Vercel Dashboard
+   - Settings → Storage → Create Database → Vercel Blob
+   - Se añadirá automáticamente como variable de entorno
+
+**Nota:** Sin Vercel KV y Blob, el sistema funcionará en memoria (se reinicia con cada deploy).
 
 ## ⚠️ Notas Importantes
 
