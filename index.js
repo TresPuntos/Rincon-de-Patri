@@ -18,6 +18,8 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 // Validar variables de entorno
 if (!TELEGRAM_TOKEN || !OPENAI_API_KEY) {
   console.error("❌ ERROR: Faltan variables de entorno requeridas (TELEGRAM_TOKEN, OPENAI_API_KEY)");
+  console.error("TELEGRAM_TOKEN:", TELEGRAM_TOKEN ? "✓ Configurado" : "✗ FALTA");
+  console.error("OPENAI_API_KEY:", OPENAI_API_KEY ? "✓ Configurado" : "✗ FALTA");
 }
 
 // ========================
@@ -51,23 +53,31 @@ app.get("/health", (req, res) => {
 // ========================
 app.post("/webhook", async (req, res) => {
   try {
+    console.log("📨 Webhook recibido:", JSON.stringify(req.body).substring(0, 200));
+    
     // Validar que existe el mensaje
     const msg = req.body.message;
     if (!msg) {
+      console.log("⚠️ No hay mensaje en el body");
       return res.sendStatus(200); // Telegram espera 200 incluso si ignoramos el update
     }
 
     const chatId = msg.chat.id;
     const userText = msg.text;
+    
+    console.log(`💬 Mensaje recibido de chat ${chatId}: ${userText?.substring(0, 50)}`);
 
     // Ignorar comandos del bot (como /start) o mensajes sin texto
     if (!userText || userText.startsWith("/")) {
       // Responder a /start
       if (userText === "/start") {
+        console.log("🚀 Comando /start recibido");
         await sendTelegramMessage(
           chatId,
           "👋 Hola, soy tu psicólogo virtual. Estoy aquí para escucharte y ayudarte. ¿En qué puedo ayudarte hoy?"
         );
+      } else {
+        console.log("⚠️ Mensaje ignorado (sin texto o comando no reconocido)");
       }
       return res.sendStatus(200);
     }
@@ -80,12 +90,17 @@ app.post("/webhook", async (req, res) => {
 
     // 1. Recuperar historial previo
     const history = getHistory(chatId);
+    console.log(`📚 Historial recuperado: ${history.length} mensajes`);
 
     // 2. Generar respuesta con OpenAI
+    console.log("🤖 Generando respuesta con OpenAI...");
     const response = await generateResponse(userText, history);
+    console.log(`✅ Respuesta generada: ${response.substring(0, 50)}...`);
 
     // 3. Enviar respuesta a Telegram
+    console.log("📤 Enviando respuesta a Telegram...");
     await sendTelegramMessage(chatId, response);
+    console.log("✅ Respuesta enviada exitosamente");
 
     // 4. Guardar mensaje en historial
     saveMessage(chatId, userText, response);
@@ -116,13 +131,21 @@ app.post("/webhook", async (req, res) => {
 // ========================
 async function sendTelegramMessage(chatId, text) {
   try {
-    await axios.post(`${TELEGRAM_URL}/sendMessage`, {
+    // Limpiar formato Markdown problemático
+    const cleanText = text.replace(/\*+/g, ''); // Remover asteriscos problemáticos
+    
+    const response = await axios.post(`${TELEGRAM_URL}/sendMessage`, {
       chat_id: chatId,
-      text: text,
-      parse_mode: "Markdown", // Soporte para formato básico
+      text: cleanText,
     });
+    
+    console.log(`✅ Mensaje enviado a Telegram (chatId: ${chatId})`);
+    return response.data;
   } catch (error) {
-    console.error("Error al enviar mensaje a Telegram:", error.response?.data || error.message);
+    console.error("❌ Error al enviar mensaje a Telegram:");
+    console.error("Chat ID:", chatId);
+    console.error("Error:", error.response?.data || error.message);
+    console.error("Status:", error.response?.status);
     throw error;
   }
 }
@@ -172,7 +195,7 @@ Mantén tus respuestas concisas (máximo 200 palabras) pero cálidas.`;
     let response = completion.data.choices[0].message.content.trim();
 
     // Añadir firma al final (opcional)
-    response += "\n\n💬 *Tu psicólogo virtual*";
+    response += "\n\n💬 Tu psicólogo virtual";
 
     return response;
   } catch (error) {
