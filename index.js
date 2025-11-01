@@ -930,12 +930,26 @@ async function generateResponse(message, history) {
 
     let response = completion.data.choices[0].message.content.trim();
 
-    // Añadir firma al final (evitar duplicados)
+    // Eliminar firmas antiguas o duplicadas
+    const oldSignatures = [
+      "💬 Tu psicólogo virtual",
+      "💬 Tu Rincón",
+      "💬 El Rincón de Patri"
+    ];
+    
+    oldSignatures.forEach(sig => {
+      // Eliminar todas las ocurrencias de firmas antiguas
+      response = response.replace(new RegExp(`\\n?\\n?${sig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*?$`, 'gm'), '');
+    });
+    
+    response = response.trim();
+
+    // Añadir firma nueva al final
     const botVersion = config.botVersion || "V.1.1";
     const signature = `💬 El Rincón de Patri ${botVersion}`;
     
-    // Solo añadir si no está ya en la respuesta
-    if (!response.includes("El Rincón de Patri") && !response.includes("Tu psicólogo virtual")) {
+    // Solo añadir si no está ya en la respuesta (con cualquier versión)
+    if (!response.match(/💬\s*El Rincón de Patri/)) {
       response += `\n\n${signature}`;
     }
 
