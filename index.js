@@ -88,7 +88,14 @@ app.get("/health", (req, res) => {
 // Panel de Administración
 // ========================
 app.get("/admin", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "admin.html"));
+  // Compatible con Vercel y local
+  const adminPath = path.join(__dirname || process.cwd(), "public", "admin.html");
+  res.sendFile(adminPath, (err) => {
+    if (err) {
+      console.error("Error al servir admin.html:", err);
+      res.status(404).send("Panel de administración no encontrado");
+    }
+  });
 });
 
 // ========================
