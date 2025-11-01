@@ -85,49 +85,88 @@ app.get("/health", (req, res) => {
 // Panel de Administración (debe ir ANTES de express.static)
 // ========================
 const fs = require("fs");
+
+// Leer el HTML una vez al iniciar (si está disponible)
+let adminHTML = null;
+try {
+  const adminPath = path.join(__dirname, "public", "admin.html");
+  if (fs.existsSync(adminPath)) {
+    adminHTML = fs.readFileSync(adminPath, "utf8");
+    console.log("✅ Panel admin HTML cargado en memoria");
+  } else {
+    // Intentar otras rutas
+    const altPaths = [
+      path.join(process.cwd(), "public", "admin.html"),
+      "./public/admin.html",
+      "public/admin.html"
+    ];
+    for (const p of altPaths) {
+      if (fs.existsSync(p)) {
+        adminHTML = fs.readFileSync(p, "utf8");
+        console.log(`✅ Panel admin HTML cargado desde: ${p}`);
+        break;
+      }
+    }
+  }
+} catch (error) {
+  console.warn("⚠️ No se pudo cargar admin.html al inicio:", error.message);
+}
+
 app.get("/admin", (req, res) => {
   try {
-    // Intentar diferentes rutas según el entorno
+    console.log("📥 Petición GET /admin recibida");
+    
+    // Si ya lo tenemos en memoria, usarlo
+    if (adminHTML) {
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
+      return res.send(adminHTML);
+    }
+    
+    // Si no, intentar leerlo ahora
     const possiblePaths = [
       path.join(__dirname, "public", "admin.html"),
       path.join(process.cwd(), "public", "admin.html"),
       path.join(__dirname, "admin.html"),
-      "public/admin.html",
-      "./public/admin.html"
+      "./public/admin.html",
+      "public/admin.html"
     ];
     
-    let adminContent = null;
     for (const p of possiblePaths) {
       try {
         if (fs.existsSync(p)) {
-          adminContent = fs.readFileSync(p, "utf8");
+          const content = fs.readFileSync(p, "utf8");
+          adminHTML = content; // Guardar en memoria
           console.log(`✅ Panel admin cargado desde: ${p}`);
-          break;
+          res.setHeader("Content-Type", "text/html; charset=utf-8");
+          return res.send(content);
         }
       } catch (e) {
-        // Continuar con la siguiente ruta
+        console.log(`⚠️ No se pudo leer ${p}:`, e.message);
       }
     }
     
-    if (adminContent) {
-      res.setHeader("Content-Type", "text/html");
-      res.send(adminContent);
-    } else {
-      console.error("❌ No se encontró admin.html en ninguna ruta:", possiblePaths);
-      res.status(404).send(`
-        <html>
-          <body>
-            <h1>Panel no encontrado</h1>
-            <p>Rutas intentadas: ${possiblePaths.join(", ")}</p>
-            <p>__dirname: ${__dirname}</p>
-            <p>process.cwd(): ${process.cwd()}</p>
-          </body>
-        </html>
-      `);
-    }
+    // Si nada funciona, devolver página de error informativa
+    console.error("❌ No se encontró admin.html en ninguna ruta");
+    res.status(404).send(`
+      <!DOCTYPE html>
+      <html>
+        <head><title>Panel no encontrado</title></head>
+        <body style="font-family: Arial; padding: 40px;">
+          <h1>Panel de Administración no encontrado</h1>
+          <p>El archivo admin.html no se encontró en el servidor.</p>
+          <h3>Información de debugging:</h3>
+          <ul>
+            <li>__dirname: ${__dirname}</li>
+            <li>process.cwd(): ${process.cwd()}</li>
+            <li>Rutas intentadas: ${possiblePaths.join("<br>")}</li>
+          </ul>
+          <p><strong>Acción requerida:</strong> Verifica que el archivo public/admin.html esté en el repositorio y se haya desplegado correctamente.</p>
+        </body>
+      </html>
+    `);
   } catch (error) {
     console.error("❌ Error al servir admin.html:", error);
-    res.status(500).send(`Error al cargar el panel: ${error.message}`);
+    res.status(500).send(`Error: ${error.message}`);
   }
 });
 
