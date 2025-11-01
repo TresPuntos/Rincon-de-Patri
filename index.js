@@ -460,7 +460,7 @@ const adminHTML = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// Registrar la ruta /admin ANTES de cualquier otro middleware
+// Registrar la ruta /admin - debe estar ANTES de express.static
 app.get("/admin", (req, res) => {
   try {
     console.log("📥 Petición GET /admin recibida");
@@ -471,16 +471,6 @@ app.get("/admin", (req, res) => {
     console.error("❌ Error al servir /admin:", error);
     res.status(500).send(`<h1>Error</h1><p>${error.message}</p>`);
   }
-});
-
-// Añadir también como catch-all antes de express.static
-app.get("*", (req, res, next) => {
-  if (req.path === "/admin") {
-    console.log("📥 Catch-all detectó /admin");
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    return res.send(adminHTML);
-  }
-  next();
 });
 
 // Servir archivos estáticos (después de rutas específicas)
