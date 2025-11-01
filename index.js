@@ -29,18 +29,15 @@ try {
 
 const app = express();
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Servir archivos estáticos (para el panel de admin)
-app.use(express.static("public"));
-
 // Variables de entorno
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_URL = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123"; // Cambia esto en producción
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Validar variables de entorno
 if (!TELEGRAM_TOKEN || !OPENAI_API_KEY) {
@@ -85,18 +82,41 @@ app.get("/health", (req, res) => {
 });
 
 // ========================
-// Panel de Administración
+// Panel de Administración (debe ir ANTES de express.static)
 // ========================
+const fs = require("fs");
 app.get("/admin", (req, res) => {
-  // Compatible con Vercel y local
-  const adminPath = path.join(__dirname || process.cwd(), "public", "admin.html");
-  res.sendFile(adminPath, (err) => {
-    if (err) {
-      console.error("Error al servir admin.html:", err);
+  try {
+    // Intentar diferentes rutas según el entorno
+    const possiblePaths = [
+      path.join(__dirname, "public", "admin.html"),
+      path.join(process.cwd(), "public", "admin.html"),
+      path.join(__dirname, "admin.html"),
+      "public/admin.html"
+    ];
+    
+    let adminPath = null;
+    for (const p of possiblePaths) {
+      if (fs.existsSync(p)) {
+        adminPath = p;
+        break;
+      }
+    }
+    
+    if (adminPath) {
+      res.sendFile(adminPath);
+    } else {
+      console.error("No se encontró admin.html en ninguna ruta:", possiblePaths);
       res.status(404).send("Panel de administración no encontrado");
     }
-  });
+  } catch (error) {
+    console.error("Error al servir admin.html:", error);
+    res.status(500).send("Error al cargar el panel de administración");
+  }
 });
+
+// Servir archivos estáticos (después de rutas específicas)
+app.use(express.static("public"));
 
 // ========================
 // Autenticación del Panel
