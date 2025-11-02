@@ -2597,35 +2597,55 @@ NOTA CLÍNICA:`;
  */
 async function saveClinicalNote(chatId, clinicalNote) {
   try {
-    if (!clinicalNote) return;
+    if (!clinicalNote) {
+      console.warn("⚠️ Intento de guardar nota clínica vacía, cancelado");
+      return;
+    }
+
+    console.log(`💾 Guardando nota clínica para Chat ID: ${chatId}`);
+    console.log(`   Nota: ${clinicalNote.substring(0, 100)}...`);
 
     // Inicializar historial clínico si no existe
     if (!clinicalHistory.has(chatId)) {
       clinicalHistory.set(chatId, []);
+      console.log(`   ✅ Nuevo historial clínico creado para Chat ID: ${chatId}`);
     }
 
     const history = clinicalHistory.get(chatId);
     const messages = getHistory(chatId);
     
+    // Calcular número de sesión
+    const sessionNumber = history.length + 1;
+    
     // Añadir nota clínica
-    history.push({
+    const newNote = {
       note: clinicalNote,
       timestamp: new Date().toISOString(),
-      sessionNumber: history.length + 1,
+      sessionNumber: sessionNumber,
       messageCount: messages.length
-    });
-
+    };
+    
+    history.push(newNote);
     clinicalHistory.set(chatId, history);
     
-    // Intentar guardar en Vercel KV si está disponible
+    console.log(`   ✅ Nota clínica añadida al historial. Total notas: ${history.length}`);
+    console.log(`   📝 Sesión ${sessionNumber}, Mensajes: ${messages.length}`);
+    
+    // Intentar guardar en Vercel KV si está disponible (no bloqueante)
     if (kv) {
       try {
         await kv.set(`clinical:history:${chatId}`, history);
-        console.log(`✅ Nota clínica guardada en KV`);
+        console.log(`   ✅ Nota clínica guardada en Vercel KV`);
       } catch (kvError) {
-        console.error("Error al guardar nota clínica en KV:", kvError);
+        console.error("   ⚠️ Error al guardar nota clínica en KV (continuando sin KV):", kvError.message);
+        // No lanzar error, continuar sin KV
       }
+    } else {
+      console.warn("   ⚠️ Vercel KV no disponible, nota guardada solo en memoria");
+      console.warn("   La nota se perderá al reiniciar el servidor si no hay KV configurado");
     }
+    
+    return newNote;
 
     console.log(`📋 Nota clínica #{${history.length}} guardada para chat ${chatId}`);
   } catch (error) {
