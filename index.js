@@ -2267,11 +2267,19 @@ async function generateResponse(message, history, chatId) {
     }
     
     // Añadir documentación de instrucciones - SIEMPRE revisar antes de responder
+    // La documentación puede estar ya incluida en el systemPrompt si se guardó desde el panel
     if (instructionDocs && instructionDocs.trim().length > 0) {
-      console.log(`📄 Documentación cargada (${instructionDocs.length} caracteres)`);
-      systemPrompt += `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+      // Solo añadir si no está ya incluida en el prompt
+      if (!systemPrompt.includes("DOCUMENTACIÓN DISPONIBLE")) {
+        console.log(`📄 Documentación cargada desde archivos (${instructionDocs.length} caracteres)`);
+        systemPrompt += `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+      } else {
+        console.log(`📄 Documentación ya incluida en el prompt guardado`);
+      }
     } else {
-      console.warn("⚠️ No hay documentación de instrucciones disponible");
+      console.warn("⚠️ No hay documentación de instrucciones disponible desde archivos PDFs");
+      console.warn("   Esto es normal en Vercel si ALLOW_PDF_LOAD no está configurado");
+      console.warn("   La documentación puede estar incluida en el prompt si lo guardaste desde el panel");
     }
     
     // Añadir instrucción final CRÍTICA para evitar mensajes genéricos
