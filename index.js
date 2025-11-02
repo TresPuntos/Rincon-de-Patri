@@ -98,6 +98,8 @@ const conversationHistory = new Map(); // chatId -> array de mensajes
 const conversationSummaries = new Map(); // chatId -> array de resúmenes por categoría
 const lastSummaryCount = new Map(); // chatId -> número de mensajes cuando se hizo el último resumen
 const clinicalHistory = new Map(); // chatId -> historial clínico completo (como un psicólogo real)
+const dailyDiary = new Map(); // chatId -> array de entradas diarias [{date, summary, messageCount}]
+const lastDiaryDate = new Map(); // chatId -> última fecha en que se generó un diario (YYYY-MM-DD)
 
 // Máximo de mensajes a mantener por conversación (para no exceder límites de tokens)
 const MAX_HISTORY_MESSAGES = 50; // Aumentado para mantener más contexto
@@ -1100,61 +1102,117 @@ app.get("/historial", (req, res) => {
             }
         }
 
-        function displayClinicalHistory(data) {
+        async function displayClinicalHistory(data) {
             const statsContainer = document.getElementById('statsContainer');
             const contentContainer = document.getElementById('clinicalContentInner');
 
             // Mostrar estadísticas
-            if (data.hasNotes) {
-                statsContainer.innerHTML = \`
-                    <div class="stat-card">
-                        <div class="number">\${data.totalClinicalNotes}</div>
-                        <div class="label">Sesiones Registradas</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="number">\${data.currentMessageCount}</div>
-                        <div class="label">Mensajes Totales</div>
-                    </div>
-                \`;
-            }
+            const diary = data.diary || [];
+            const overallSummary = data.overallSummary || null;
+            
+            statsContainer.innerHTML = \`
+                <div class="stat-card">
+                    <div class="number">\${diary.length}</div>
+                    <div class="label">Días con Diario</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">\${data.totalClinicalNotes || 0}</div>
+                    <div class="label">Notas Clínicas</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">\${data.currentMessageCount || 0}</div>
+                    <div class="label">Mensajes Totales</div>
+                </div>
+                <div class="stat-card">
+                    <div class="number">\${overallSummary ? '✓' : '-'}</div>
+                    <div class="label">Resumen General</div>
+                </div>
+            \`;
 
-            // Mostrar contenido
-            if (data.hasNotes && data.clinicalHistory) {
-                let html = '<h2>Notas Clínicas</h2>';
-                
-                data.clinicalHistory.forEach((note, index) => {
-                    const date = new Date(note.timestamp);
+            // Construir HTML con dos secciones: Diario e Historial
+            let html = '';
+            
+            // SECCIÓN 1: DIARIO
+            html += '<div style="margin-bottom: 50px;">';
+            html += '<h2 style="color: #1e3c72; border-bottom: 3px solid #4a90e2; padding-bottom: 15px; margin-bottom: 25px;">📅 Diario</h2>';
+            html += '<p style="color: #666; margin-bottom: 25px; font-style: italic;">Resumen diario de las conversaciones de Patri</p>';
+            
+            if (diary.length > 0) {
+                diary.forEach((entry) => {
+                    const date = new Date(entry.date);
                     html += \`
-                        <div class="clinical-note">
-                            <div class="clinical-note-header">
-                                Sesión \${note.sessionNumber} - \${date.toLocaleDateString('es-ES', { 
+                        <div class="clinical-note" style="margin-bottom: 25px;">
+                            <div class="clinical-note-header" style="font-size: 1.2em;">
+                                📆 \${date.toLocaleDateString('es-ES', { 
                                     weekday: 'long', 
                                     year: 'numeric', 
                                     month: 'long', 
                                     day: 'numeric' 
                                 })}
                             </div>
-                            <div style="white-space: pre-wrap;">\${note.note}</div>
+                            <div style="white-space: pre-wrap; margin-top: 15px; line-height: 1.8;">\${entry.summary}</div>
+                            <div style="margin-top: 10px; font-size: 0.9em; color: #999;">
+                                \${entry.messageCount || 0} mensajes ese día
+                            </div>
                         </div>
                     \`;
                 });
-                
-                contentContainer.innerHTML = html;
-                
-                // Añadir botón de descarga
-                contentContainer.innerHTML += \`
-                    <button class="btn btn-download" onclick="downloadHistory('\${data.chatId}')">
-                        📥 Descargar Historial Completo
-                    </button>
-                \`;
             } else {
-                contentContainer.innerHTML = \`
-                    <div class="empty-state">
-                        <p>Aún no hay notas clínicas registradas.</p>
-                        <p style="margin-top: 10px;">El bot generará notas clínicas automáticamente durante las conversaciones con Patri.</p>
+                html += \`
+                    <div class="empty-state" style="padding: 40px;">
+                        <p>Aún no hay entradas de diario.</p>
+                        <p style="margin-top: 10px;">El bot generará automáticamente un resumen diario cada día que haya conversación con Patri.</p>
                     </div>
                 \`;
-                statsContainer.innerHTML = '';
+            }
+            html += '</div>';
+            
+            // SECCIÓN 2: HISTORIAL (Resumen General)
+            html += '<div style="border-top: 2px solid #e8e8e8; padding-top: 40px; margin-top: 40px;">';
+            html += '<h2 style="color: #1e3c72; border-bottom: 3px solid #4a90e2; padding-bottom: 15px; margin-bottom: 25px;">📋 Historial</h2>';
+            html += '<p style="color: #666; margin-bottom: 25px; font-style: italic;">Resumen comprensivo del historial terapéutico completo</p>';
+            
+            if (overallSummary) {
+                html += \`
+                    <div class="clinical-note" style="background: #f0f7ff; border-left: 4px solid #4a90e2;">
+                        <div style="white-space: pre-wrap; line-height: 1.8; font-size: 1.05em;">\${overallSummary}</div>
+                    </div>
+                \`;
+            } else {
+                html += \`
+                    <div class="empty-state" style="padding: 40px;">
+                        <p>Aún no hay resumen general disponible.</p>
+                        <p style="margin-top: 10px;">El resumen general se generará cuando haya suficiente historial de conversaciones.</p>
+                        <button class="btn" onclick="generateOverallSummary('\${data.chatId}')" style="margin-top: 20px; max-width: 300px;">
+                            🔄 Generar Resumen General
+                        </button>
+                    </div>
+                \`;
+            }
+            html += '</div>';
+            
+            contentContainer.innerHTML = html;
+        }
+        
+        async function generateOverallSummary(chatId) {
+            try {
+                showAlert('Generando resumen general...', 'success');
+                const response = await fetch(\`/api/overall-history-summary/\${chatId}\`, {
+                    method: 'POST',
+                    headers: { 'Authorization': \`Bearer \${authToken}\` }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    // Recargar la página para mostrar el nuevo resumen
+                    await loadClinicalHistory();
+                    showAlert('✅ Resumen general generado exitosamente', 'success');
+                } else {
+                    showAlert('Error al generar resumen', 'error');
+                }
+            } catch (e) {
+                showAlert('Error al generar resumen', 'error');
+                console.error(e);
             }
         }
 
@@ -1597,7 +1655,55 @@ app.get("/api/summaries/:chatId", requireAuth, async (req, res) => {
   }
 });
 
-// Endpoint para ver el historial clínico completo (requiere autenticación)
+// Endpoint para ver el historial completo (diario + historial resumido) - requiere autenticación
+app.get("/api/complete-history/:chatId", requireAuth, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    
+    // Cargar todos los datos desde KV
+    await loadClinicalHistoryFromKV(chatId);
+    await loadDailyDiaryFromKV(chatId);
+    await loadHistoryFromKV(chatId);
+    
+    const diary = getDailyDiary(chatId);
+    const clinicalHistoryList = getClinicalHistory(chatId);
+    const history = getHistory(chatId);
+    
+    // Generar resumen general si hay datos pero no existe aún
+    let overallSummary = null;
+    try {
+      // Intentar obtener resumen general guardado
+      if (kv) {
+        overallSummary = await kv.get(`overall:summary:${chatId}`);
+      }
+      
+      // Si no existe y hay datos, generarlo
+      if (!overallSummary && (diary.length > 0 || clinicalHistoryList.length > 0)) {
+        overallSummary = await generateOverallHistorySummary(chatId);
+        if (overallSummary && kv) {
+          await kv.set(`overall:summary:${chatId}`, overallSummary);
+        }
+      }
+    } catch (summaryError) {
+      console.warn("⚠️ Error al generar/cargar resumen general:", summaryError.message);
+    }
+    
+    res.json({
+      chatId,
+      currentMessageCount: history.length,
+      totalClinicalNotes: clinicalHistoryList.length,
+      hasNotes: clinicalHistoryList.length > 0,
+      diary: diary, // Entradas del diario diario
+      overallSummary: overallSummary, // Resumen general del historial
+      clinicalHistory: clinicalHistoryList
+    });
+  } catch (error) {
+    console.error("Error al obtener historial completo:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint para ver el historial clínico completo (requiere autenticación) - MANTENIDO PARA COMPATIBILIDAD
 app.get("/api/clinical-history/:chatId", requireAuth, async (req, res) => {
   try {
     const { chatId } = req.params;
@@ -1619,6 +1725,43 @@ app.get("/api/clinical-history/:chatId", requireAuth, async (req, res) => {
     });
   } catch (error) {
     console.error("Error al obtener historial clínico:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Endpoint para generar resumen general del historial (requiere autenticación)
+app.post("/api/overall-history-summary/:chatId", requireAuth, async (req, res) => {
+  try {
+    const { chatId } = req.params;
+    
+    // Cargar todos los datos
+    await loadDailyDiaryFromKV(chatId);
+    await loadClinicalHistoryFromKV(chatId);
+    await loadSummariesFromKV(chatId);
+    
+    const overallSummary = await generateOverallHistorySummary(chatId);
+    
+    if (overallSummary) {
+      // Guardar en KV si está disponible
+      if (kv) {
+        try {
+          await kv.set(`overall:summary:${chatId}`, overallSummary);
+          console.log(`✅ Resumen general guardado en KV`);
+        } catch (kvError) {
+          console.warn("⚠️ Error al guardar resumen en KV:", kvError.message);
+        }
+      }
+      
+      res.json({
+        success: true,
+        overallSummary: overallSummary,
+        message: "Resumen general generado exitosamente"
+      });
+    } else {
+      res.status(400).json({ error: "No hay suficiente historial para generar un resumen general" });
+    }
+  } catch (error) {
+    console.error("Error al generar resumen general:", error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1743,7 +1886,7 @@ app.post("/webhook", async (req, res) => {
       console.warn("⚠️ Error al enviar typing action (continuando):", err.message);
     }
 
-    // 1. Cargar resúmenes, historial clínico e historial de conversación desde Vercel KV (si están disponibles)
+    // 1. Cargar resúmenes, historial clínico, diario e historial de conversación desde Vercel KV (si están disponibles)
     console.log(`📥 Cargando datos desde Vercel KV para Chat ID: ${chatId}`);
     try {
       await loadSummariesFromKV(chatId);
@@ -1754,6 +1897,11 @@ app.post("/webhook", async (req, res) => {
       await loadClinicalHistoryFromKV(chatId);
     } catch (err) {
       console.warn("⚠️ Error al cargar historial clínico desde KV (continuando):", err.message);
+    }
+    try {
+      await loadDailyDiaryFromKV(chatId);
+    } catch (err) {
+      console.warn("⚠️ Error al cargar diario desde KV (continuando):", err.message);
     }
     try {
       await loadHistoryFromKV(chatId); // IMPORTANTE: Cargar historial antes de usar
@@ -1862,6 +2010,38 @@ app.post("/webhook", async (req, res) => {
       if (messagesAfterSave.length - lastNoteMessageCount >= CLINICAL_NOTES_INTERVAL) {
         console.log(`ℹ️ Hay ${messagesAfterSave.length} mensajes pero la última nota fue en ${lastNoteMessageCount}. Próxima nota en ${Math.ceil(messagesAfterSave.length / CLINICAL_NOTES_INTERVAL) * CLINICAL_NOTES_INTERVAL} mensajes.`);
       }
+    }
+
+    // 8. Generar entrada de diario diario si es un nuevo día
+    try {
+      const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+      const lastDiaryDateForChat = lastDiaryDate.get(chatId);
+      
+      if (lastDiaryDateForChat !== today && messagesAfterSave.length > 0) {
+        console.log(`📅 Nuevo día detectado (último diario: ${lastDiaryDateForChat}, hoy: ${today}). Generando entrada de diario...`);
+        
+        // Obtener mensajes de hoy
+        const todayMessages = messagesAfterSave.filter(msg => {
+          const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
+          return msgDate === today;
+        });
+        
+        if (todayMessages.length > 0) {
+          generateDailyDiaryEntry(chatId, todayMessages, today)
+            .then(async (diaryEntry) => {
+              if (diaryEntry) {
+                await saveDailyDiaryEntry(chatId, diaryEntry);
+                lastDiaryDate.set(chatId, today);
+                console.log(`✅ Entrada de diario guardada para ${today}`);
+              }
+            })
+            .catch(err => {
+              console.error("❌ Error al generar entrada de diario:", err);
+            });
+        }
+      }
+    } catch (diaryError) {
+      console.warn("⚠️ Error al verificar/generar diario (continuando):", diaryError.message);
     }
 
     res.sendStatus(200);
@@ -2641,6 +2821,230 @@ async function loadClinicalHistoryFromKV(chatId) {
     }
   } catch (error) {
     console.error("Error al cargar historial clínico desde KV:", error);
+  }
+}
+
+/**
+ * Genera una entrada de diario diario
+ */
+async function generateDailyDiaryEntry(chatId, messages, date) {
+  try {
+    if (!messages || messages.length === 0) return null;
+
+    const config = await getBotConfig();
+    
+    // Obtener contexto de días anteriores
+    const diaryEntries = dailyDiary.get(chatId) || [];
+    const previousDiary = diaryEntries.length > 0 
+      ? diaryEntries.slice(-3).map(e => `**${e.date}**: ${e.summary}`).join('\n\n')
+      : "Primer día de seguimiento.";
+
+    const conversationText = messages
+      .map(msg => `Patri: ${msg.user}\nBot: ${msg.bot}`)
+      .join('\n\n');
+
+    const diaryPrompt = `Eres el psicólogo virtual de Patri. Crea una entrada de diario para el día ${date}.
+
+Contexto de días anteriores:
+${previousDiary}
+
+Conversación de hoy (${messages.length} intercambios):
+${conversationText}
+
+Crea un resumen del día en formato de diario personal, como si fueras su psicólogo escribiendo notas sobre el día de Patri. Incluye:
+- Estado emocional general del día
+- Temas principales que surgieron
+- Progresos o dificultades mencionadas
+- Observaciones relevantes
+
+Formato: Escríbelo como una entrada de diario profesional, cálida y humanizada.`;
+
+    const completion = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: config.model || "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: "Eres un psicólogo escribiendo entradas de diario sobre el seguimiento diario de una paciente." },
+          { role: "user", content: diaryPrompt }
+        ],
+        max_tokens: 600,
+        temperature: 0.6,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000
+      }
+    );
+
+    const summary = completion.data.choices[0].message.content.trim();
+    console.log(`📅 Entrada de diario generada para ${date}`);
+    return summary;
+  } catch (error) {
+    console.error("Error al generar entrada de diario:", error);
+    return null;
+  }
+}
+
+/**
+ * Guarda una entrada de diario diario
+ */
+async function saveDailyDiaryEntry(chatId, summary, date = null) {
+  try {
+    if (!summary) return;
+
+    const entryDate = date || new Date().toISOString().split('T')[0];
+    
+    if (!dailyDiary.has(chatId)) {
+      dailyDiary.set(chatId, []);
+    }
+
+    const diary = dailyDiary.get(chatId);
+    const messages = getHistory(chatId);
+    
+    // Verificar si ya existe una entrada para esta fecha
+    const existingIndex = diary.findIndex(e => e.date === entryDate);
+    const entry = {
+      date: entryDate,
+      summary: summary,
+      timestamp: new Date().toISOString(),
+      messageCount: messages.length
+    };
+
+    if (existingIndex >= 0) {
+      // Actualizar entrada existente
+      diary[existingIndex] = entry;
+      console.log(`   📝 Entrada de diario actualizada para ${entryDate}`);
+    } else {
+      // Añadir nueva entrada
+      diary.push(entry);
+      console.log(`   ✅ Nueva entrada de diario añadida para ${entryDate}`);
+    }
+
+    dailyDiary.set(chatId, diary.sort((a, b) => b.date.localeCompare(a.date))); // Ordenar por fecha (más reciente primero)
+    
+    // Guardar en KV si está disponible
+    if (kv) {
+      try {
+        await kv.set(`daily:diary:${chatId}`, diary);
+        await kv.set(`daily:diary:date:${chatId}`, entryDate);
+        console.log(`   ✅ Diario guardado en Vercel KV`);
+      } catch (kvError) {
+        console.warn("   ⚠️ Error al guardar diario en KV:", kvError.message);
+      }
+    }
+    
+    return entry;
+  } catch (error) {
+    console.error("Error al guardar entrada de diario:", error);
+    throw error;
+  }
+}
+
+/**
+ * Carga el diario desde Vercel KV si está disponible
+ */
+async function loadDailyDiaryFromKV(chatId) {
+  if (!kv || !chatId) return;
+  
+  try {
+    const diary = await kv.get(`daily:diary:${chatId}`);
+    if (diary && Array.isArray(diary) && diary.length > 0) {
+      dailyDiary.set(chatId, diary);
+      console.log(`✅ Diario cargado desde KV: ${diary.length} entradas`);
+    }
+    
+    const lastDate = await kv.get(`daily:diary:date:${chatId}`);
+    if (lastDate) {
+      lastDiaryDate.set(chatId, lastDate);
+    }
+  } catch (error) {
+    console.error("Error al cargar diario desde KV:", error);
+  }
+}
+
+/**
+ * Obtiene el diario de un chat
+ */
+function getDailyDiary(chatId) {
+  try {
+    return dailyDiary.get(chatId) || [];
+  } catch (error) {
+    console.error("Error al recuperar diario:", error);
+    return [];
+  }
+}
+
+/**
+ * Genera un resumen general del historial completo de Patri
+ */
+async function generateOverallHistorySummary(chatId) {
+  try {
+    const diary = getDailyDiary(chatId);
+    const clinicalNotes = getClinicalHistory(chatId);
+    const summaries = getConversationSummaries(chatId);
+    
+    if (diary.length === 0 && clinicalNotes.length === 0) {
+      return null;
+    }
+
+    const config = await getBotConfig();
+    
+    let contextText = "";
+    
+    if (diary.length > 0) {
+      contextText += `## Diario de seguimiento diario:\n\n${diary.map(e => `**${e.date}**: ${e.summary}`).join('\n\n')}\n\n`;
+    }
+    
+    if (clinicalNotes.length > 0) {
+      contextText += `## Notas clínicas profesionales:\n\n${clinicalNotes.map(n => `**Sesión ${n.sessionNumber} (${new Date(n.timestamp).toLocaleDateString('es-ES')})**: ${n.note.substring(0, 500)}...`).join('\n\n')}\n\n`;
+    }
+    
+    if (summaries && Object.keys(summaries).length > 0) {
+      contextText += `## Resúmenes por categoría:\n\n${formatSummariesForContext(summaries)}\n\n`;
+    }
+
+    const summaryPrompt = `Eres el psicólogo virtual de Patri. Basándote en todo el seguimiento realizado, crea un resumen general profesional de su historial terapéutico.
+
+${contextText}
+
+Crea un resumen comprensivo que incluya:
+- Evolución general de Patri a lo largo del tiempo
+- Patrones y tendencias observados
+- Áreas de progreso identificadas
+- Desafíos persistentes o recurrentes
+- Recomendaciones generales de seguimiento
+
+Formato: Escríbelo como un resumen profesional de historial clínico, estructurado pero humanizado.`;
+
+    const completion = await axios.post(
+      "https://api.openai.com/v1/chat/completions",
+      {
+        model: config.model || "gpt-3.5-turbo",
+        messages: [
+          { role: "system", content: "Eres un psicólogo profesional creando un resumen de historial clínico comprensivo." },
+          { role: "user", content: summaryPrompt }
+        ],
+        max_tokens: 1000,
+        temperature: 0.5,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 30000
+      }
+    );
+
+    const overallSummary = completion.data.choices[0].message.content.trim();
+    console.log(`📊 Resumen general del historial generado`);
+    return overallSummary;
+  } catch (error) {
+    console.error("Error al generar resumen general:", error);
+    return null;
   }
 }
 
