@@ -2038,17 +2038,24 @@ app.post("/webhook", async (req, res) => {
       if (shouldGenerateDiary && messagesAfterSave.length > 0) {
         console.log(`📅 Generando entrada de diario (último: ${lastDiaryDateForChat || 'ninguno'}, hoy: ${today})...`);
         
-        // Obtener mensajes de hoy
-        const todayMessages = messagesAfterSave.filter(msg => {
-          const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
-          return msgDate === today;
-        });
+        // Obtener mensajes de hoy (usar todos los mensajes si es la primera vez)
+        // Para el primer diario del día, usar todos los mensajes disponibles para tener contexto
+        let messagesToUse = messagesAfterSave;
         
-        console.log(`   📊 Mensajes de hoy: ${todayMessages.length} de ${messagesAfterSave.length} totales`);
+        // Si ya hay mensajes previos, filtrar solo los de hoy
+        if (lastDiaryDateForChat) {
+          messagesToUse = messagesAfterSave.filter(msg => {
+            const msgDate = new Date(msg.timestamp).toISOString().split('T')[0];
+            return msgDate === today;
+          });
+        }
         
-        if (todayMessages.length > 0) {
+        console.log(`   📊 Mensajes a usar para diario: ${messagesToUse.length} de ${messagesAfterSave.length} totales`);
+        console.log(`   📅 Fecha objetivo: ${today}`);
+        
+        if (messagesToUse.length > 0) {
           // Generar en background (no bloqueante)
-          generateDailyDiaryEntry(chatId, todayMessages, today)
+          generateDailyDiaryEntry(chatId, messagesToUse, today)
             .then(async (diaryEntry) => {
               if (diaryEntry) {
                 await saveDailyDiaryEntry(chatId, diaryEntry, today);
@@ -2058,6 +2065,7 @@ app.post("/webhook", async (req, res) => {
                 if (kv) {
                   try {
                     await kv.set(`daily:diary:date:${chatId}`, today);
+                    console.log(`   ✅ Fecha de diario guardada en KV: ${today}`);
                   } catch (err) {
                     console.warn("⚠️ Error al guardar fecha de diario en KV:", err.message);
                   }
@@ -2073,7 +2081,7 @@ app.post("/webhook", async (req, res) => {
               console.error("Stack:", err.stack);
             });
         } else {
-          console.log(`ℹ️ No hay mensajes de hoy aún (todos son anteriores)`);
+          console.log(`ℹ️ No hay mensajes disponibles para generar diario (filtrados: ${messagesToUse.length}, totales: ${messagesAfterSave.length})`);
         }
       } else {
         console.log(`ℹ️ Diario ya existe para hoy (${today}). No se generará nuevo diario hasta mañana.`);
