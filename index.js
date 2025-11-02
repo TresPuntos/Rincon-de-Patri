@@ -79,9 +79,17 @@ const CLINICAL_NOTES_INTERVAL = 20; // Generar nota clínica cada N mensajes
 let instructionDocs = "";
 async function loadInstructionDocs() {
   try {
+    // En Vercel serverless, el sistema de archivos puede ser limitado
+    // Intentar cargar PDFs pero no fallar si no están disponibles
+    if (process.env.VERCEL && !process.env.ALLOW_PDF_LOAD) {
+      console.log("⚠️ Modo Vercel: Saltando carga de PDFs (pueden no estar disponibles)");
+      instructionDocs = "";
+      return;
+    }
+    
     console.log("🔄 Iniciando carga de documentos de instrucciones...");
     console.log(`📂 Directorio actual: ${process.cwd()}`);
-    console.log(`📂 __dirname: ${__dirname}`);
+    console.log(`📂 __dirname: ${__dirname || 'no disponible'}`);
     
     const pdfFiles = [
       "Bot_Patri_Instrucciones/01_Instrucciones_Base.pdf",
@@ -164,84 +172,46 @@ async function loadInstructionDocs() {
 }
 
 // Cargar documentos al iniciar (si están disponibles)
-// Asegurar que se carguen correctamente antes de procesar mensajes
-loadInstructionDocs().catch(err => {
-  console.error("❌ Error crítico al cargar documentos de instrucciones:", err);
-});
+// En Vercel, esto puede fallar silenciosamente, así que lo hacemos sin bloquear
+if (typeof loadInstructionDocs === 'function') {
+  loadInstructionDocs().catch(err => {
+    console.error("❌ Error crítico al cargar documentos de instrucciones:", err.message || err);
+    // No bloquear la aplicación si falla la carga de PDFs
+    instructionDocs = "";
+  });
+}
 
 // ========================
 // Health Check
 // ========================
 app.get("/", (req, res) => {
   try {
-    // Verificar que los archivos importantes existen
-    const fs = require('fs');
-    const path = require('path');
-    
-    const checks = {
-      apiHandler: false,
-      vercelConfig: false,
-      instructionDocs: false,
-      pdfFiles: []
-    };
-    
-    // Verificar archivos
-    try {
-      checks.apiHandler = fs.existsSync(path.join(__dirname, 'api', 'index.js'));
-    } catch (e) {}
-    
-    try {
-      checks.vercelConfig = fs.existsSync(path.join(__dirname, 'vercel.json'));
-    } catch (e) {}
-    
-    try {
-      checks.instructionDocs = fs.existsSync(path.join(__dirname, 'Bot_Patri_Instrucciones'));
-      if (checks.instructionDocs) {
-        const pdfDir = path.join(__dirname, 'Bot_Patri_Instrucciones');
-        const files = fs.readdirSync(pdfDir);
-        checks.pdfFiles = files.filter(f => f.endsWith('.pdf'));
-      }
-    } catch (e) {
-      checks.pdfFiles = [];
-    }
-    
     res.json({ 
       status: "ok", 
       message: "Bot Psicólogo Virtual está funcionando",
-      version: "2.4-DEPLOY-TEST",
-      buildDate: new Date().toISOString(),
+      version: "2.5-SERVERLESS",
       deployment: {
         vercel: !!process.env.VERCEL,
         handler: "api/index.js",
-        timestamp: new Date().toISOString(),
-        environment: process.env.VERCEL_ENV || "unknown"
+        environment: process.env.VERCEL_ENV || "production"
       },
       routes: {
         public: ["/", "/health", "/admin", "/historial"],
-        api: ["/api/config", "/api/auth", "/api/documents", "/api/summaries/:chatId", "/api/clinical-history/:chatId"],
+        api: ["/api/config", "/api/auth", "/api/documents"],
         webhook: "/webhook"
-      },
-      files: {
-        apiHandler: checks.apiHandler ? "✅ Presente" : "❌ No encontrado",
-        vercelConfig: checks.vercelConfig ? "✅ Presente" : "❌ No encontrado",
-        instructionDocs: checks.instructionDocs ? `✅ Presente (${checks.pdfFiles.length} PDFs)` : "❌ No encontrado",
-        pdfFiles: checks.pdfFiles.length > 0 ? checks.pdfFiles : "No hay PDFs"
       },
       environment: {
         nodeVersion: process.version,
-        cwd: process.cwd(),
-        __dirname: __dirname,
-        vercel: !!process.env.VERCEL,
-        vercelEnv: process.env.VERCEL_ENV || "not-set"
+        vercel: !!process.env.VERCEL
       },
       timestamp: new Date().toISOString()
     });
   } catch (error) {
-    res.json({
+    res.status(500).json({
       status: "error",
       message: "Error al generar respuesta",
       error: error.message,
-      version: "2.4-ERROR",
+      version: "2.5-ERROR",
       timestamp: new Date().toISOString()
     });
   }
