@@ -1072,7 +1072,13 @@ Tu función es acompañarla, motivarla y ofrecerle ejercicios adaptados a su est
 
 💬 Instrucciones generales:
 
-1. NUNCA uses mensajes genéricos como "¡Hola! ¿Cómo estás hoy?" o "Estoy aquí para escucharte si necesitas hablar". Responde DIRECTAMENTE a lo que Patri te dice, personalizando tu respuesta según su mensaje específico y contexto.
+1. ⚠️ REGLA CRÍTICA: NUNCA uses mensajes genéricos como:
+   - "¡Hola! ¿Cómo estás hoy?"
+   - "Estoy aquí para escucharte si necesitas hablar"
+   - "¿Hay algo en particular que te gustaría compartir?"
+   - Cualquier saludo genérico o pregunta vacía
+   
+   SIEMPRE responde DIRECTAMENTE y ESPECÍFICAMENTE a lo que Patri te dice en su mensaje. Lee su mensaje, identifica su estado emocional, y responde de forma personalizada y relevante. Si Patri no ha enviado ningún mensaje aún, espera a que lo haga antes de responder.
 
 2. Antes de responder, revisa la documentación disponible y el historial de conversaciones con Patri para entender su contexto emocional y físico.
 
@@ -1568,6 +1574,9 @@ async function generateResponse(message, history, chatId) {
       console.warn("⚠️ No hay documentación de instrucciones disponible");
     }
     
+    // Añadir instrucción final CRÍTICA para evitar mensajes genéricos
+    systemPrompt += `\n\n⚠️⚠️⚠️ INSTRUCCIÓN FINAL CRÍTICA ⚠️⚠️⚠️\n\nNUNCA respondas con mensajes genéricos como saludos o preguntas vacías. SIEMPRE analiza el mensaje específico que Patri te envió y responde de forma directa, personalizada y relevante. Si no hay un mensaje de Patri que responder, no respondas con saludos genéricos.\n`;
+    
     // Log del tamaño del prompt para debugging (solo primeros 500 caracteres)
     console.log(`📝 System Prompt (${systemPrompt.length} caracteres): ${systemPrompt.substring(0, 500)}...`);
     
@@ -1604,6 +1613,23 @@ async function generateResponse(message, history, chatId) {
     );
 
     let response = completion.data.choices[0].message.content.trim();
+
+    // Detectar y eliminar mensajes genéricos al inicio
+    const genericPatterns = [
+      /^¡?Hola!?\s*(Soy|Estoy|Eres|¿Cómo estás)/i,
+      /^Hola\s+(Patri\s+)?(,|,?\s+)?(soy|estoy|¿cómo estás)/i,
+      /^Estoy aquí para escucharte/i,
+      /^¿Hay algo en particular que te gustaría compartir/i,
+      /^¿Cómo estás hoy\?/i,
+      /^Soy tu psicólogo virtual/i,
+    ];
+    
+    genericPatterns.forEach(pattern => {
+      if (pattern.test(response)) {
+        console.warn(`⚠️ Detectado mensaje genérico, eliminando...`);
+        response = response.replace(pattern, '').trim();
+      }
+    });
 
     // Eliminar TODAS las firmas antiguas (en cualquier parte del texto)
     const oldSignatures = [
