@@ -307,6 +307,68 @@ app.get("/api/chats", requireAuth, async (req, res) => {
   }
 });
 
+// Endpoint para obtener el prompt completo que el bot usaría (requiere autenticación)
+app.get("/api/current-prompt/:chatId?", requireAuth, async (req, res) => {
+  try {
+    const chatId = req.params.chatId || null;
+    
+    // Obtener configuración del bot
+    const config = await getBotConfig();
+    let systemPrompt = config.systemPrompt || "";
+    
+    // Cargar resúmenes si hay chatId
+    let summariesText = "";
+    let hasSummaries = false;
+    if (chatId) {
+      await loadSummariesFromKV(chatId);
+      const summaries = getConversationSummaries(chatId);
+      if (summaries && Object.keys(summaries).length > 0) {
+        summariesText = formatSummariesForContext(summaries);
+        systemPrompt += "\n\n" + summariesText + "\n\nUsa esta memoria de conversaciones anteriores para dar continuidad y personalizar tus respuestas. Referencia información relevante cuando sea apropiado.\n";
+        hasSummaries = true;
+      }
+    }
+    
+    // Añadir documentación de instrucciones
+    let hasInstructionDocs = false;
+    let instructionDocsLength = 0;
+    if (instructionDocs && instructionDocs.trim().length > 0) {
+      instructionDocsLength = instructionDocs.length;
+      systemPrompt += `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+      hasInstructionDocs = true;
+    }
+    
+    // Añadir instrucción final CRÍTICA
+    systemPrompt += `\n\n⚠️⚠️⚠️ INSTRUCCIÓN FINAL CRÍTICA ⚠️⚠️⚠️\n\nNUNCA respondas con mensajes genéricos como saludos o preguntas vacías. SIEMPRE analiza el mensaje específico que Patri te envió y responde de forma directa, personalizada y relevante. Si no hay un mensaje de Patri que responder, no respondas con saludos genéricos.\n`;
+    
+    // Obtener historial de mensajes si hay chatId
+    let historyLength = 0;
+    if (chatId) {
+      await loadHistoryFromKV(chatId);
+      const history = getHistory(chatId);
+      historyLength = history ? history.length : 0;
+    }
+    
+    res.json({
+      chatId: chatId || "base",
+      fullPrompt: systemPrompt,
+      length: systemPrompt.length,
+      hasSummaries: hasSummaries,
+      hasInstructionDocs: hasInstructionDocs,
+      instructionDocsLength: instructionDocsLength,
+      historyLength: historyLength,
+      config: {
+        model: config.model,
+        maxTokens: config.maxTokens,
+        temperature: config.temperature
+      }
+    });
+  } catch (error) {
+    console.error("Error al obtener prompt actual:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 app.get("/patri", (req, res) => {
   res.json({ 
     message: "Acceso directo al historial de Patri",
@@ -522,6 +584,27 @@ const adminHTML = `<!DOCTYPE html>
                 </div>
             </div>
             <div class="section">
+                <h2>🔍 Prompt Actual del Bot</h2>
+                <div class="form-group">
+                    <label>Chat ID (opcional - para ver prompt personalizado)</label>
+                    <input type="text" id="promptChatIdInput" placeholder="Deja vacío para ver el prompt base" />
+                    <small style="color: #666;">El prompt se personaliza según el Chat ID con resúmenes e historial</small>
+                </div>
+                <button class="btn" onclick="loadCurrentPrompt()">🔍 Ver Prompt Actual</button>
+                <div id="promptContainer" style="margin-top: 30px; display: none;">
+                    <div style="background: #f8f9fa; border: 2px solid #667eea; border-radius: 10px; padding: 20px;">
+                        <h3 style="color: #667eea; margin-bottom: 15px;">📝 Prompt Completo que usa el Bot</h3>
+                        <div style="background: white; padding: 15px; border-radius: 8px; border: 1px solid #ddd;">
+                            <div id="promptContent" style="white-space: pre-wrap; font-family: 'Courier New', monospace; line-height: 1.6; font-size: 13px; max-height: 600px; overflow-y: auto; color: #333;"></div>
+                        </div>
+                        <div style="margin-top: 15px; padding: 10px; background: #e7f3ff; border-radius: 5px; font-size: 12px; color: #0066cc;">
+                            <strong>ℹ️ Información:</strong>
+                            <div id="promptInfo" style="margin-top: 5px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="section">
                 <h2>📄 Documentos</h2>
                 <div class="file-upload" onclick="document.getElementById('fileInput').click()">
                     <p>📁 Click para subir un documento</p>
@@ -727,6 +810,35 @@ const adminHTML = `<!DOCTYPE html>
                     }
                 } else {
                     showAlert('alert', data.error || 'Error al cargar el historial', 'error');
+                }
+            } catch (e) {
+                showAlert('alert', 'Error al conectar con el servidor', 'error');
+                console.error(e);
+            }
+        }
+        async function loadCurrentPrompt() {
+            const chatId = document.getElementById('promptChatIdInput').value || null;
+            try {
+                const url = chatId ? \`/api/current-prompt/\${chatId}\` : '/api/current-prompt';
+                const response = await fetch(url, {
+                    headers: { 'Authorization': \`Bearer \${authToken}\` }
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    const container = document.getElementById('promptContainer');
+                    const content = document.getElementById('promptContent');
+                    const info = document.getElementById('promptInfo');
+                    container.style.display = 'block';
+                    content.textContent = data.fullPrompt || 'Sin prompt disponible';
+                    info.innerHTML = \`
+                        <strong>Longitud:</strong> \${data.length || 0} caracteres<br>
+                        <strong>Incluye resúmenes:</strong> \${data.hasSummaries ? 'Sí' : 'No'}<br>
+                        <strong>Incluye documentación:</strong> \${data.hasInstructionDocs ? 'Sí (' + data.instructionDocsLength + ' caracteres)' : 'No'}<br>
+                        <strong>Historial de mensajes:</strong> \${data.historyLength || 0} mensajes\${chatId ? ' para este Chat ID' : ''}
+                    \`;
+                    showAlert('alert', '✅ Prompt cargado exitosamente', 'success');
+                } else {
+                    showAlert('alert', data.error || 'Error al cargar el prompt', 'error');
                 }
             } catch (e) {
                 showAlert('alert', 'Error al conectar con el servidor', 'error');
@@ -1696,21 +1808,33 @@ async function sendTelegramMessage(chatId, text) {
 // ========================
 async function generateResponse(message, history, chatId) {
   try {
-    // Obtener configuración del bot (desde KV o memoria)
+    console.log(`\n🔍 ========== GENERANDO RESPUESTA ==========`);
+    console.log(`   Chat ID: ${chatId}`);
+    console.log(`   Mensaje: ${message?.substring(0, 100)}...`);
+    console.log(`   Historial: ${history?.length || 0} mensajes`);
+    
+    // Obtener configuración del bot (desde KV o memoria) - SIEMPRE revisar antes de responder
     const config = await getBotConfig();
+    console.log(`✅ Configuración cargada: modelo=${config.model}, tokens=${config.maxTokens}, temp=${config.temperature}`);
     
     // Construir el prompt del sistema con instrucciones adicionales
-    let systemPrompt = config.systemPrompt;
+    let systemPrompt = config.systemPrompt || "";
+    console.log(`📝 Prompt base: ${systemPrompt.length} caracteres`);
     
-    // Añadir resúmenes de conversaciones anteriores si existen
+    // Añadir resúmenes de conversaciones anteriores si existen - SIEMPRE revisar antes de responder
     if (chatId) {
+      await loadSummariesFromKV(chatId);
       const summaries = getConversationSummaries(chatId);
       if (summaries && Object.keys(summaries).length > 0) {
         const summariesText = formatSummariesForContext(summaries);
-        systemPrompt += summariesText + "\n\nUsa esta memoria de conversaciones anteriores para dar continuidad y personalizar tus respuestas. Referencia información relevante cuando sea apropiado.\n";
+        systemPrompt += "\n\n" + summariesText + "\n\nUsa esta memoria de conversaciones anteriores para dar continuidad y personalizar tus respuestas. Referencia información relevante cuando sea apropiado.\n";
+        console.log(`📚 Resúmenes añadidos: ${Object.keys(summaries).length} categorías`);
+      } else {
+        console.log(`ℹ️ No hay resúmenes disponibles para este chat`);
       }
     }
     
+    // Añadir documentación de instrucciones - SIEMPRE revisar antes de responder
     if (instructionDocs && instructionDocs.trim().length > 0) {
       console.log(`📄 Documentación cargada (${instructionDocs.length} caracteres)`);
       systemPrompt += `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
@@ -1721,8 +1845,10 @@ async function generateResponse(message, history, chatId) {
     // Añadir instrucción final CRÍTICA para evitar mensajes genéricos
     systemPrompt += `\n\n⚠️⚠️⚠️ INSTRUCCIÓN FINAL CRÍTICA ⚠️⚠️⚠️\n\nNUNCA respondas con mensajes genéricos como saludos o preguntas vacías. SIEMPRE analiza el mensaje específico que Patri te envió y responde de forma directa, personalizada y relevante. Si no hay un mensaje de Patri que responder, no respondas con saludos genéricos.\n`;
     
-    // Log del tamaño del prompt para debugging (solo primeros 500 caracteres)
-    console.log(`📝 System Prompt (${systemPrompt.length} caracteres): ${systemPrompt.substring(0, 500)}...`);
+    // Log del tamaño del prompt para debugging
+    console.log(`📝 System Prompt FINAL: ${systemPrompt.length} caracteres`);
+    console.log(`   Primeros 300 caracteres: ${systemPrompt.substring(0, 300)}...`);
+    console.log(`   Últimos 200 caracteres: ...${systemPrompt.substring(systemPrompt.length - 200)}`);
     
     const messages = [
       { role: "system", content: systemPrompt },
@@ -1829,8 +1955,11 @@ async function generateResponse(message, history, chatId) {
 // ========================
 function saveMessage(chatId, userText, botResponse) {
   try {
+    console.log(`💾 Guardando mensaje en historial para Chat ID: ${chatId}`);
+    
     if (!conversationHistory.has(chatId)) {
       conversationHistory.set(chatId, []);
+      console.log(`   ✅ Nuevo historial creado para Chat ID: ${chatId}`);
     }
 
     const messages = conversationHistory.get(chatId);
@@ -1842,12 +1971,23 @@ function saveMessage(chatId, userText, botResponse) {
 
     // Mantener solo los últimos N mensajes
     if (messages.length > MAX_HISTORY_MESSAGES) {
-      messages.shift(); // Eliminar el más antiguo
+      const removed = messages.shift(); // Eliminar el más antiguo
+      console.log(`   ⚠️ Historial lleno, eliminando mensaje más antiguo (${messages.length - MAX_HISTORY_MESSAGES + 1} mensajes guardados)`);
     }
 
     conversationHistory.set(chatId, messages);
+    
+    // Guardar en Vercel KV si está disponible
+    if (kv && chatId) {
+      saveHistoryToKV(chatId, messages).catch(err => {
+        console.warn(`⚠️ Error al guardar historial en KV (continuando sin KV):`, err.message);
+      });
+    }
+    
+    console.log(`   ✅ Mensaje guardado. Total mensajes en historial: ${messages.length}`);
   } catch (error) {
-    console.error("Error al guardar mensaje en historial:", error);
+    console.error("❌ Error al guardar mensaje en historial:", error);
+    console.error(error.stack);
   }
 }
 
@@ -2055,6 +2195,38 @@ async function loadSummariesFromKV(chatId) {
     }
   } catch (error) {
     console.error("Error al cargar resúmenes desde KV:", error);
+  }
+}
+
+/**
+ * Guarda el historial de conversación en Vercel KV si está disponible
+ */
+async function saveHistoryToKV(chatId, messages) {
+  if (!kv || !chatId || !messages) return;
+  
+  try {
+    await kv.set(`conversation:history:${chatId}`, messages);
+    console.log(`✅ Historial guardado en KV para chat ${chatId} (${messages.length} mensajes)`);
+  } catch (error) {
+    console.error("Error al guardar historial en KV:", error);
+    throw error; // Re-lanzar para que el caller pueda manejarlo
+  }
+}
+
+/**
+ * Carga el historial de conversación desde Vercel KV si está disponible
+ */
+async function loadHistoryFromKV(chatId) {
+  if (!kv || !chatId) return;
+  
+  try {
+    const history = await kv.get(`conversation:history:${chatId}`);
+    if (history && Array.isArray(history) && history.length > 0) {
+      conversationHistory.set(chatId, history);
+      console.log(`✅ Historial cargado desde KV para chat ${chatId} (${history.length} mensajes)`);
+    }
+  } catch (error) {
+    console.error("Error al cargar historial desde KV:", error);
   }
 }
 
