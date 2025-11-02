@@ -1681,15 +1681,44 @@ app.get("/api/summaries/:chatId", requireAuth, async (req, res) => {
 app.get("/api/complete-history/:chatId", requireAuth, async (req, res) => {
   try {
     const { chatId } = req.params;
+    console.log(`📥 Cargando historial completo para Chat ID: ${chatId}`);
     
-    // Cargar todos los datos desde KV
-    await loadClinicalHistoryFromKV(chatId);
-    await loadDailyDiaryFromKV(chatId);
-    await loadHistoryFromKV(chatId);
+    // Cargar todos los datos desde KV (si está disponible)
+    try {
+      await loadClinicalHistoryFromKV(chatId);
+    } catch (err) {
+      console.warn("⚠️ Error al cargar historial clínico desde KV:", err.message);
+    }
+    
+    try {
+      await loadDailyDiaryFromKV(chatId);
+    } catch (err) {
+      console.warn("⚠️ Error al cargar diario desde KV:", err.message);
+    }
+    
+    try {
+      await loadHistoryFromKV(chatId);
+    } catch (err) {
+      console.warn("⚠️ Error al cargar historial desde KV:", err.message);
+    }
     
     const diary = getDailyDiary(chatId);
     const clinicalHistoryList = getClinicalHistory(chatId);
     const history = getHistory(chatId);
+    
+    console.log(`📊 Datos cargados para Chat ID ${chatId}:`);
+    console.log(`   - Diario: ${diary.length} entradas`);
+    console.log(`   - Notas clínicas: ${clinicalHistoryList.length}`);
+    console.log(`   - Mensajes en historial: ${history.length}`);
+    
+    // Si no hay datos, mostrar información útil
+    if (diary.length === 0 && clinicalHistoryList.length === 0 && history.length === 0) {
+      console.warn(`⚠️ No se encontró historial para Chat ID ${chatId}`);
+      console.warn(`   Esto puede deberse a:`);
+      console.warn(`   1. Es el primer uso del bot`);
+      console.warn(`   2. Vercel KV no está configurado y la función se reinició`);
+      console.warn(`   3. El Chat ID no coincide con el usado en Telegram`);
+    }
     
     // Generar resumen general si hay datos pero no existe aún
     let overallSummary = null;
