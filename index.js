@@ -143,6 +143,14 @@ app.get("/health", (req, res) => {
   res.json({ status: "healthy" });
 });
 
+app.get("/patri", (req, res) => {
+  res.json({ 
+    message: "Acceso directo al historial de Patri",
+    historial: "Disponible en /historial",
+    admin: "Disponible en /admin"
+  });
+});
+
 // Endpoint de prueba para verificar rutas
 app.get("/test-admin", (req, res) => {
   res.json({ message: "Las rutas funcionan", timestamp: new Date().toISOString() });
