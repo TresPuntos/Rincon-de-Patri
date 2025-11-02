@@ -3,6 +3,6 @@
 
 const app = require('../index.js');
 
-// Exportar el handler para Vercel
+// Exportar el handler para Vercel (debe ser una función o el app directamente)
 module.exports = app;
 

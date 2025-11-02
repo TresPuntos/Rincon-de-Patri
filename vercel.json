@@ -11,6 +11,10 @@
       "src": "/(.*)",
       "dest": "/api/index.js"
     }
-  ]
+  ],
+  "functions": {
+    "api/index.js": {
+      "includeFiles": "**/*.pdf"
+    }
+  }
 }
-
