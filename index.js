@@ -1310,9 +1310,17 @@ async function getBotConfig() {
         // No lanzar el error, continuar con los siguientes métodos
       }
     }
-    // Si no hay KV, usar variable global (si existe)
+    // Si no hay KV, intentar usar variable global o de módulo (si existe)
+    // En Vercel serverless, global puede no persistir, así que también intentamos una variable de módulo
     if (global.botConfig) {
+      console.log("✅ Usando configuración de global.botConfig");
       return global.botConfig;
+    }
+    
+    // También intentar desde una variable de módulo (persiste mejor en serverless)
+    if (typeof module !== 'undefined' && module.exports && module.exports.botConfig) {
+      console.log("✅ Usando configuración de module.exports.botConfig");
+      return module.exports.botConfig;
     }
     // Configuración por defecto con documentación incluida
     let defaultSystemPrompt = `Rol:
@@ -1455,8 +1463,11 @@ async function saveBotConfig(config) {
       try {
         await kv.set("bot:config", config);
         console.log("✅ Configuración guardada en Vercel KV");
-        // También guardar en memoria como backup
+        // También guardar en memoria como backup (global y module.exports)
         global.botConfig = config;
+        if (typeof module !== 'undefined' && module.exports) {
+          module.exports.botConfig = config;
+        }
         console.log("✅ Configuración también guardada en memoria como backup");
         return true;
       } catch (kvError) {
@@ -1466,11 +1477,14 @@ async function saveBotConfig(config) {
       }
     }
     
-    // Si no hay KV o falló, usar variable global (solo en memoria)
-    // Esto persiste durante la sesión del servidor pero se pierde al reiniciar
+    // Si no hay KV o falló, usar variable global Y de módulo (para mejor persistencia en serverless)
+    // En Vercel serverless, las funciones pueden reiniciarse, pero module.exports persiste mejor
     global.botConfig = config;
-    console.log("✅ Configuración guardada en memoria (local)");
-    console.warn("⚠️ ADVERTENCIA: La configuración se guarda en memoria. Se perderá al reiniciar el servidor. Para persistencia, configura Vercel KV.");
+    if (typeof module !== 'undefined' && module.exports) {
+      module.exports.botConfig = config;
+    }
+    console.log("✅ Configuración guardada en memoria (global y module.exports)");
+    console.warn("⚠️ ADVERTENCIA: La configuración se guarda en memoria. Se perderá si la función serverless se reinicia. Para persistencia permanente, configura Vercel KV.");
     return true;
   } catch (error) {
     console.error("❌ Error crítico al guardar configuración:", error);
