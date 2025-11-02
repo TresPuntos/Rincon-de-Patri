@@ -2646,10 +2646,10 @@ async function saveClinicalNote(chatId, clinicalNote) {
     }
     
     return newNote;
-
-    console.log(`📋 Nota clínica #{${history.length}} guardada para chat ${chatId}`);
   } catch (error) {
-    console.error("Error al guardar nota clínica:", error);
+    console.error("❌ Error al guardar nota clínica:", error);
+    console.error("Stack:", error.stack);
+    throw error;
   }
 }
 
