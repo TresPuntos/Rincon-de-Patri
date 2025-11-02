@@ -125,7 +125,10 @@ async function loadInstructionDocs() {
 }
 
 // Cargar documentos al iniciar (si están disponibles)
-loadInstructionDocs();
+// Asegurar que se carguen correctamente antes de procesar mensajes
+loadInstructionDocs().catch(err => {
+  console.error("❌ Error crítico al cargar documentos de instrucciones:", err);
+});
 
 // ========================
 // Health Check
