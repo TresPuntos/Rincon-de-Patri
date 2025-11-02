@@ -250,6 +250,25 @@ app.get("/health", (req, res) => {
   res.json({ status: "healthy" });
 });
 
+// Endpoint de información (sin contraseña)
+app.get("/info", (req, res) => {
+  res.json({
+    message: "Información del panel de administración",
+    adminPanel: "https://rinconde-patri.vercel.app/admin",
+    historialPanel: "https://rinconde-patri.vercel.app/historial",
+    passwordInfo: {
+      default: "admin123",
+      configured: !!process.env.ADMIN_PASSWORD,
+      hint: process.env.ADMIN_PASSWORD ? "Usando contraseña personalizada de Vercel" : "Usando contraseña por defecto: admin123"
+    },
+    instructions: [
+      "1. Ve a /admin o /historial",
+      "2. Usa la contraseña mostrada arriba",
+      "3. Para cambiar la contraseña, añade ADMIN_PASSWORD en Vercel Settings → Environment Variables"
+    ]
+  });
+});
+
 app.get("/patri", (req, res) => {
   res.json({ 
     message: "Acceso directo al historial de Patri",
