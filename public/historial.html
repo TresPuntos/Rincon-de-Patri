@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Historial Clínico de Patri</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Georgia', serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+            border-bottom: 3px solid #4a90e2;
+        }
+        .header h1 { font-size: 2em; margin-bottom: 10px; font-weight: 300; }
+        .header p { font-size: 1.1em; opacity: 0.9; }
+        .content { padding: 40px; }
+        .login-section {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 30px;
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .login-section h3 { 
+            color: #1e3c72; 
+            margin-bottom: 20px;
+            font-size: 1.3em;
+        }
+        .form-group {
+            margin-bottom: 20px;
+            text-align: left;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 600;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            font-size: 16px;
+            font-family: inherit;
+        }
+        .btn {
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+            width: 100%;
+        }
+        .btn:hover { 
+            transform: translateY(-2px); 
+            box-shadow: 0 5px 15px rgba(30, 60, 114, 0.4); 
+        }
+        .clinical-note {
+            background: #f8f9fa;
+            border-left: 4px solid #4a90e2;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .clinical-note-header {
+            font-weight: bold;
+            color: #1e3c72;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .alert {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .alert.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .alert.show { display: block; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🏥 Historial Clínico</h1>
+            <p>Registro profesional de sesiones terapéuticas</p>
+        </div>
+        <div class="content">
+            <div id="alert" class="alert"></div>
+            
+            <div id="loginSection" class="login-section">
+                <h3>🔐 Acceso al Historial</h3>
+                <div class="form-group">
+                    <label for="passwordInput">Contraseña</label>
+                    <input type="password" id="passwordInput" placeholder="Introduce la contraseña" />
+                </div>
+                <div class="form-group">
+                    <label for="chatIdInput">Chat ID de Patri</label>
+                    <input type="text" id="chatIdInput" placeholder="Introduce el Chat ID" />
+                </div>
+                <button class="btn" onclick="loadClinicalHistory()">Ver Historial Clínico</button>
+            </div>
+
+            <div id="clinicalContent" style="display: none;">
+                <div id="clinicalContentInner"></div>
+            </div>
+        </div>
+    </div>
+    <script>
+        async function loadClinicalHistory() {
+            const password = document.getElementById('passwordInput').value;
+            const chatId = document.getElementById('chatIdInput').value;
+            
+            if (!password || !chatId) {
+                showAlert('Por favor completa ambos campos', 'error');
+                return;
+            }
+
+            try {
+                const authResponse = await fetch('/api/auth', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+
+                if (!authResponse.ok) {
+                    showAlert('Contraseña incorrecta', 'error');
+                    return;
+                }
+
+                const authData = await authResponse.json();
+                const authToken = authData.token;
+
+                const response = await fetch(`/api/clinical-history/${chatId}`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayClinicalHistory(data);
+                    document.getElementById('loginSection').style.display = 'none';
+                    document.getElementById('clinicalContent').style.display = 'block';
+                } else {
+                    showAlert(data.error || 'Error al cargar el historial', 'error');
+                }
+            } catch (e) {
+                showAlert('Error al conectar con el servidor', 'error');
+                console.error(e);
+            }
+        }
+
+        function displayClinicalHistory(data) {
+            const container = document.getElementById('clinicalContentInner');
+
+            if (data.hasNotes && data.clinicalHistory) {
+                let html = '<h2 style="color: #1e3c72; margin-bottom: 30px;">Notas Clínicas</h2>';
+                
+                data.clinicalHistory.forEach((note) => {
+                    const date = new Date(note.timestamp);
+                    html += `
+                        <div class="clinical-note">
+                            <div class="clinical-note-header">
+                                Sesión ${note.sessionNumber} - ${date.toLocaleDateString('es-ES', { 
+                                    weekday: 'long', 
+                                    year: 'numeric', 
+                                    month: 'long', 
+                                    day: 'numeric' 
+                                })}
+                            </div>
+                            <div style="white-space: pre-wrap;">${note.note}</div>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = '<p style="text-align: center; color: #999; font-style: italic; padding: 40px;">No hay notas clínicas registradas aún. El bot generará notas automáticamente.</p>';
+            }
+        }
+
+        function showAlert(message, type) {
+            const alert = document.getElementById('alert');
+            alert.textContent = message;
+            alert.className = `alert ${type} show`;
+            setTimeout(() => { alert.classList.remove('show'); }, 5000);
+        }
+
+        document.getElementById('passwordInput')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loadClinicalHistory();
+        });
+        document.getElementById('chatIdInput')?.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') loadClinicalHistory();
+        });
+    </script>
+</body>
+</html>
+
