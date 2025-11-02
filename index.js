@@ -133,7 +133,8 @@ app.get("/", (req, res) => {
   res.json({ 
     status: "ok", 
     message: "Bot Psicólogo Virtual está funcionando",
-    version: "2.0",
+    version: "2.1",
+    routes: ["/", "/health", "/admin", "/historial-clinico", "/webhook"],
     timestamp: new Date().toISOString()
   });
 });
