@@ -1,0 +1,19 @@
+📍 UBICACIÓN ACTUAL DEL PROYECTO:
+
+/Users/jordi/Documents/GitHub/El rincon de Patri
+
+🔗 REPOSITORIO GIT:
+https://github.com/TresPuntos/Rincon-de-Patri.git
+
+📁 ESTRUCTURA CRÍTICA:
+- api/index.js (Handler de Vercel)
+- vercel.json (Configuración de Vercel)
+- index.js (Aplicación principal)
+- Bot_Patri_Instrucciones/ (PDFs de instrucciones)
+
+Para abrir este proyecto en otra conversación de Cursor:
+1. Abre Cursor
+2. File → Open Folder
+3. Navega a: /Users/jordi/Documents/GitHub/El rincon de Patri
+4. O simplemente: Abre la carpeta "El rincon de Patri" desde Finder
+

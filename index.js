@@ -173,57 +173,78 @@ loadInstructionDocs().catch(err => {
 // Health Check
 // ========================
 app.get("/", (req, res) => {
-  // Verificar que los archivos importantes existen
-  const fs = require('fs');
-  const path = require('path');
-  
-  const checks = {
-    apiHandler: fs.existsSync(path.join(__dirname, 'api', 'index.js')),
-    vercelConfig: fs.existsSync(path.join(__dirname, 'vercel.json')),
-    instructionDocs: fs.existsSync(path.join(__dirname, 'Bot_Patri_Instrucciones')),
-    pdfFiles: []
-  };
-  
-  // Verificar PDFs
-  if (checks.instructionDocs) {
-    const pdfDir = path.join(__dirname, 'Bot_Patri_Instrucciones');
+  try {
+    // Verificar que los archivos importantes existen
+    const fs = require('fs');
+    const path = require('path');
+    
+    const checks = {
+      apiHandler: false,
+      vercelConfig: false,
+      instructionDocs: false,
+      pdfFiles: []
+    };
+    
+    // Verificar archivos
     try {
-      const files = fs.readdirSync(pdfDir);
-      checks.pdfFiles = files.filter(f => f.endsWith('.pdf'));
+      checks.apiHandler = fs.existsSync(path.join(__dirname, 'api', 'index.js'));
+    } catch (e) {}
+    
+    try {
+      checks.vercelConfig = fs.existsSync(path.join(__dirname, 'vercel.json'));
+    } catch (e) {}
+    
+    try {
+      checks.instructionDocs = fs.existsSync(path.join(__dirname, 'Bot_Patri_Instrucciones'));
+      if (checks.instructionDocs) {
+        const pdfDir = path.join(__dirname, 'Bot_Patri_Instrucciones');
+        const files = fs.readdirSync(pdfDir);
+        checks.pdfFiles = files.filter(f => f.endsWith('.pdf'));
+      }
     } catch (e) {
-      checks.pdfFiles = ['Error al leer directorio'];
+      checks.pdfFiles = [];
     }
-  }
-  
-  res.json({ 
-    status: "ok", 
-    message: "Bot Psicólogo Virtual está funcionando",
-    version: "2.3",
-    buildDate: "2025-11-02T20:00:00Z",
-    deployment: {
-      vercel: true,
-      handler: "api/index.js",
+    
+    res.json({ 
+      status: "ok", 
+      message: "Bot Psicólogo Virtual está funcionando",
+      version: "2.4-DEPLOY-TEST",
+      buildDate: new Date().toISOString(),
+      deployment: {
+        vercel: !!process.env.VERCEL,
+        handler: "api/index.js",
+        timestamp: new Date().toISOString(),
+        environment: process.env.VERCEL_ENV || "unknown"
+      },
+      routes: {
+        public: ["/", "/health", "/admin", "/historial"],
+        api: ["/api/config", "/api/auth", "/api/documents", "/api/summaries/:chatId", "/api/clinical-history/:chatId"],
+        webhook: "/webhook"
+      },
+      files: {
+        apiHandler: checks.apiHandler ? "✅ Presente" : "❌ No encontrado",
+        vercelConfig: checks.vercelConfig ? "✅ Presente" : "❌ No encontrado",
+        instructionDocs: checks.instructionDocs ? `✅ Presente (${checks.pdfFiles.length} PDFs)` : "❌ No encontrado",
+        pdfFiles: checks.pdfFiles.length > 0 ? checks.pdfFiles : "No hay PDFs"
+      },
+      environment: {
+        nodeVersion: process.version,
+        cwd: process.cwd(),
+        __dirname: __dirname,
+        vercel: !!process.env.VERCEL,
+        vercelEnv: process.env.VERCEL_ENV || "not-set"
+      },
       timestamp: new Date().toISOString()
-    },
-    routes: {
-      public: ["/", "/health", "/admin", "/historial"],
-      api: ["/api/config", "/api/auth", "/api/documents", "/api/summaries/:chatId", "/api/clinical-history/:chatId"],
-      webhook: "/webhook"
-    },
-    files: {
-      apiHandler: checks.apiHandler ? "✅ Presente" : "❌ No encontrado",
-      vercelConfig: checks.vercelConfig ? "✅ Presente" : "❌ No encontrado",
-      instructionDocs: checks.instructionDocs ? `✅ Presente (${checks.pdfFiles.length} PDFs)` : "❌ No encontrado",
-      pdfFiles: checks.pdfFiles.length > 0 ? checks.pdfFiles : "No hay PDFs"
-    },
-    environment: {
-      nodeVersion: process.version,
-      cwd: process.cwd(),
-      __dirname: __dirname,
-      vercel: process.env.VERCEL ? "Sí" : "No"
-    },
-    timestamp: new Date().toISOString()
-  });
+    });
+  } catch (error) {
+    res.json({
+      status: "error",
+      message: "Error al generar respuesta",
+      error: error.message,
+      version: "2.4-ERROR",
+      timestamp: new Date().toISOString()
+    });
+  }
 });
 
 app.get("/health", (req, res) => {

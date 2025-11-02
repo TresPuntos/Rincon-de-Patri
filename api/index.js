@@ -1,6 +1,4 @@
-// Vercel Serverless Function Handler para Express
+// Vercel Serverless Function Handler
+// Importa y exporta la aplicación Express completa
 const app = require('../index.js');
-
-// Vercel necesita el handler exportado directamente
 module.exports = app;
-
