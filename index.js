@@ -134,7 +134,7 @@ app.get("/", (req, res) => {
     status: "ok", 
     message: "Bot Psicólogo Virtual está funcionando",
     version: "2.1",
-    routes: ["/", "/health", "/admin", "/historial-clinico", "/webhook"],
+    routes: ["/", "/health", "/admin", "/historial", "/webhook"],
     timestamp: new Date().toISOString()
   });
 });
@@ -615,7 +615,7 @@ app.get("/admin", (req, res) => {
 });
 
 // Ruta dedicada para historial clínico de Patri
-app.get("/historial-clinico", (req, res) => {
+app.get("/historial", (req, res) => {
   try {
     const clinicalHistoryHTML = `<!DOCTYPE html>
 <html lang="es">
@@ -1996,7 +1996,7 @@ console.log("  ✓ GET /");
 console.log("  ✓ GET /health");
 console.log("  ✓ GET /test-admin");
 console.log("  ✓ GET /admin");
-console.log("  ✓ GET /historial-clinico");
+console.log("  ✓ GET /historial");
 console.log("  ✓ GET /api/config");
 console.log("  ✓ POST /api/config");
 console.log("  ✓ POST /api/auth");
