@@ -79,6 +79,10 @@ const CLINICAL_NOTES_INTERVAL = 20; // Generar nota clínica cada N mensajes
 let instructionDocs = "";
 async function loadInstructionDocs() {
   try {
+    console.log("🔄 Iniciando carga de documentos de instrucciones...");
+    console.log(`📂 Directorio actual: ${process.cwd()}`);
+    console.log(`📂 __dirname: ${__dirname}`);
+    
     const pdfFiles = [
       "Bot_Patri_Instrucciones/01_Instrucciones_Base.pdf",
       "Bot_Patri_Instrucciones/02_Personalidad.pdf",
@@ -87,43 +91,75 @@ async function loadInstructionDocs() {
     ];
     
     const texts = [];
+    let loadedCount = 0;
+    
     for (const pdfPath of pdfFiles) {
       try {
-        // Intentar diferentes rutas
+        // Intentar diferentes rutas posibles en Vercel
         const possiblePaths = [
           path.join(__dirname, pdfPath),
           path.join(process.cwd(), pdfPath),
-          pdfPath
+          path.join(process.cwd(), '..', pdfPath),
+          pdfPath,
+          path.join('/', pdfPath)
         ];
         
         let found = false;
+        let foundPath = null;
+        
         for (const p of possiblePaths) {
-          if (fs.existsSync(p)) {
-            const dataBuffer = fs.readFileSync(p);
-            const data = await pdf(dataBuffer);
-            texts.push(`\n=== ${path.basename(pdfPath)} ===\n${data.text}\n`);
-            found = true;
-            console.log(`✅ PDF cargado: ${pdfPath}`);
-            break;
+          try {
+            if (fs.existsSync(p)) {
+              foundPath = p;
+              found = true;
+              console.log(`✅ Encontrado en: ${p}`);
+              break;
+            }
+          } catch (pathError) {
+            // Continuar con el siguiente path
           }
         }
-        if (!found) {
-          console.warn(`⚠️ PDF no encontrado: ${pdfPath}`);
+        
+        if (found && foundPath) {
+          try {
+            const dataBuffer = fs.readFileSync(foundPath);
+            console.log(`📄 Leyendo PDF: ${foundPath} (${dataBuffer.length} bytes)`);
+            const data = await pdf(dataBuffer);
+            
+            if (data && data.text && data.text.trim().length > 0) {
+              texts.push(`\n=== ${path.basename(pdfPath)} ===\n${data.text}\n`);
+              loadedCount++;
+              console.log(`✅ PDF cargado correctamente: ${path.basename(pdfPath)} (${data.text.length} caracteres)`);
+            } else {
+              console.warn(`⚠️ PDF vacío o sin texto: ${path.basename(pdfPath)}`);
+            }
+          } catch (readError) {
+            console.error(`❌ Error al leer el PDF ${foundPath}:`, readError.message);
+            console.error(readError.stack);
+          }
+        } else {
+          console.warn(`⚠️ PDF no encontrado en ninguna ruta: ${pdfPath}`);
+          console.warn(`   Rutas probadas: ${possiblePaths.join(', ')}`);
         }
       } catch (error) {
-        console.warn(`⚠️ Error al leer ${pdfPath}:`, error.message);
+        console.error(`❌ Error procesando ${pdfPath}:`, error.message);
+        console.error(error.stack);
       }
     }
     
     instructionDocs = texts.join("\n");
     if (instructionDocs && instructionDocs.trim().length > 0) {
-      console.log(`✅ Documentos de instrucciones cargados correctamente (${instructionDocs.length} caracteres, ${texts.length} archivos)`);
-      console.log(`📋 Primeros caracteres: ${instructionDocs.substring(0, 200)}...`);
+      console.log(`✅ Documentos de instrucciones cargados correctamente:`);
+      console.log(`   - Archivos cargados: ${loadedCount}/${pdfFiles.length}`);
+      console.log(`   - Total caracteres: ${instructionDocs.length}`);
+      console.log(`   - Primeros caracteres: ${instructionDocs.substring(0, 200)}...`);
     } else {
-      console.warn("⚠️ Los documentos de instrucciones están vacíos o no se pudieron cargar");
+      console.error("❌ ERROR CRÍTICO: Los documentos de instrucciones están vacíos o no se pudieron cargar");
+      console.error("   El bot funcionará pero sin las instrucciones personalizadas de los PDFs");
     }
   } catch (error) {
-    console.warn("⚠️ Error al cargar documentos de instrucciones:", error.message);
+    console.error("❌ Error crítico al cargar documentos de instrucciones:", error.message);
+    console.error(error.stack);
   }
 }
 
