@@ -261,12 +261,50 @@ app.get("/info", (req, res) => {
       configured: !!process.env.ADMIN_PASSWORD,
       hint: process.env.ADMIN_PASSWORD ? "Usando contraseña personalizada de Vercel" : "Usando contraseña por defecto: admin123"
     },
+    howToGetChatId: [
+      "Opción 1: Patri puede escribir /chatid o /id al bot y recibirá su Chat ID",
+      "Opción 2: Revisa los logs de Vercel cuando Patri envíe un mensaje (verás 'Chat ID: ...')",
+      "Opción 3: Ve a /admin y usa el endpoint de chat IDs activos"
+    ],
     instructions: [
       "1. Ve a /admin o /historial",
       "2. Usa la contraseña mostrada arriba",
-      "3. Para cambiar la contraseña, añade ADMIN_PASSWORD en Vercel Settings → Environment Variables"
+      "3. Para obtener el Chat ID, pide a Patri que escriba /chatid al bot",
+      "4. Para cambiar la contraseña, añade ADMIN_PASSWORD en Vercel Settings → Environment Variables"
     ]
   });
+});
+
+// Endpoint para listar Chat IDs activos (requiere autenticación)
+app.get("/api/chats", requireAuth, async (req, res) => {
+  try {
+    // Obtener todos los chat IDs que tienen historial
+    const chatIds = Array.from(conversationHistory.keys());
+    const chats = chatIds.map(id => {
+      const history = conversationHistory.get(id);
+      const lastMessage = history && history.length > 0 ? history[history.length - 1] : null;
+      return {
+        chatId: id,
+        messageCount: history ? history.length : 0,
+        lastActivity: lastMessage ? lastMessage.timestamp : null,
+        hasClinicalHistory: clinicalHistory.has(id)
+      };
+    }).sort((a, b) => {
+      // Ordenar por última actividad (más reciente primero)
+      if (!a.lastActivity && !b.lastActivity) return 0;
+      if (!a.lastActivity) return 1;
+      if (!b.lastActivity) return -1;
+      return new Date(b.lastActivity) - new Date(a.lastActivity);
+    });
+    
+    res.json({
+      totalChats: chats.length,
+      chats: chats
+    });
+  } catch (error) {
+    console.error("Error al obtener lista de chats:", error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 app.get("/patri", (req, res) => {
@@ -1463,8 +1501,13 @@ app.post("/webhook", async (req, res) => {
 
     const chatId = msg.chat.id;
     const userText = msg.text;
+    const userName = msg.chat.first_name || msg.chat.username || "Usuario";
     
-    console.log(`💬 Mensaje recibido de chat ${chatId}: ${userText?.substring(0, 50)}`);
+    // Log detallado con Chat ID siempre visible
+    console.log(`💬 Mensaje recibido:`);
+    console.log(`   Chat ID: ${chatId}`);
+    console.log(`   Usuario: ${userName}`);
+    console.log(`   Mensaje: ${userText?.substring(0, 50) || '(sin texto)'}`);
 
     // Ignorar comandos del bot (como /start) o mensajes sin texto
     if (!userText || userText.startsWith("/")) {
@@ -1500,6 +1543,24 @@ app.post("/webhook", async (req, res) => {
       else if (userText === "/admin") {
         console.log("⚙️ Comando /admin recibido");
         await sendTelegramMessage(chatId, `⚙️ *Panel de Administración*\n\nAccede al panel completo en:\nhttps://rinconde-patri.vercel.app/admin`);
+      }
+      // Comando /chatid para obtener el Chat ID
+      else if (userText === "/chatid" || userText === "/id") {
+        console.log("🆔 Comando /chatid recibido");
+        const chatInfo = msg.chat;
+        let response = `🆔 *TU CHAT ID*\n\n`;
+        response += `Chat ID: \`${chatId}\`\n\n`;
+        if (chatInfo.first_name) {
+          response += `Nombre: ${chatInfo.first_name}`;
+          if (chatInfo.last_name) response += ` ${chatInfo.last_name}`;
+          response += `\n`;
+        }
+        if (chatInfo.username) {
+          response += `Usuario: @${chatInfo.username}\n`;
+        }
+        response += `\n💡 *Usa este Chat ID en el panel de administración*\n`;
+        response += `Panel: https://rinconde-patri.vercel.app/admin`;
+        await sendTelegramMessage(chatId, response);
       }
       else {
         console.log("⚠️ Mensaje ignorado (sin texto o comando no reconocido)");
