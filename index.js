@@ -1688,9 +1688,21 @@ app.post("/webhook", async (req, res) => {
 
     // 1. Cargar resúmenes, historial clínico e historial de conversación desde Vercel KV (si están disponibles)
     console.log(`📥 Cargando datos desde Vercel KV para Chat ID: ${chatId}`);
-    await loadSummariesFromKV(chatId);
-    await loadClinicalHistoryFromKV(chatId);
-    await loadHistoryFromKV(chatId); // IMPORTANTE: Cargar historial antes de usar
+    try {
+      await loadSummariesFromKV(chatId);
+    } catch (err) {
+      console.warn("⚠️ Error al cargar resúmenes desde KV (continuando):", err.message);
+    }
+    try {
+      await loadClinicalHistoryFromKV(chatId);
+    } catch (err) {
+      console.warn("⚠️ Error al cargar historial clínico desde KV (continuando):", err.message);
+    }
+    try {
+      await loadHistoryFromKV(chatId); // IMPORTANTE: Cargar historial antes de usar
+    } catch (err) {
+      console.warn("⚠️ Error al cargar historial desde KV (continuando):", err.message);
+    }
 
     // 2. Recuperar historial previo (ya debería estar cargado desde KV)
     const history = getHistory(chatId);
@@ -1700,8 +1712,18 @@ app.post("/webhook", async (req, res) => {
     console.log("🤖 Generando respuesta con OpenAI...");
     console.log(`📨 Mensaje del usuario: "${userText}"`);
     console.log(`📚 Historial disponible: ${history.length} mensajes`);
-    const response = await generateResponse(userText, history, chatId);
-    console.log(`✅ Respuesta generada (${response.length} caracteres): ${response.substring(0, 100)}...`);
+    
+    let response;
+    try {
+      response = await generateResponse(userText, history, chatId);
+      if (!response || typeof response !== 'string') {
+        throw new Error("Respuesta inválida generada por OpenAI");
+      }
+      console.log(`✅ Respuesta generada (${response.length} caracteres): ${response.substring(0, 100)}...`);
+    } catch (genError) {
+      console.error("❌ Error al generar respuesta:", genError);
+      throw genError; // Re-lanzar para que se capture en el catch principal
+    }
 
     // 4. Enviar respuesta a Telegram
     console.log("📤 Enviando respuesta a Telegram...");
@@ -1763,10 +1785,16 @@ app.post("/webhook", async (req, res) => {
     res.sendStatus(200);
   } catch (error) {
     console.error("❌ Error en webhook:", error);
+    console.error("❌ Stack trace:", error.stack);
+    console.error("❌ Error details:", {
+      message: error.message,
+      name: error.name,
+      body: req.body ? JSON.stringify(req.body).substring(0, 200) : 'no body'
+    });
     
     // Intentar enviar mensaje de error al usuario
     try {
-      const chatId = req.body.message?.chat?.id;
+      const chatId = req.body?.message?.chat?.id || req.body?.message?.from?.id;
       if (chatId) {
         await sendTelegramMessage(
           chatId,
@@ -1774,7 +1802,7 @@ app.post("/webhook", async (req, res) => {
         );
       }
     } catch (err) {
-      console.error("Error al enviar mensaje de error:", err);
+      console.error("Error al enviar mensaje de error:", err.message || err);
     }
     
     res.sendStatus(200); // Siempre responder 200 a Telegram
@@ -1979,10 +2007,11 @@ function saveMessage(chatId, userText, botResponse) {
 
     conversationHistory.set(chatId, messages);
     
-    // Guardar en Vercel KV si está disponible
+    // Guardar en Vercel KV si está disponible (no bloquear si falla)
     if (kv && chatId) {
       saveHistoryToKV(chatId, messages).catch(err => {
         console.warn(`⚠️ Error al guardar historial en KV (continuando sin KV):`, err.message);
+        // No re-lanzar el error para que no interrumpa el flujo
       });
     }
     
@@ -2204,14 +2233,30 @@ async function loadSummariesFromKV(chatId) {
  * Guarda el historial de conversación en Vercel KV si está disponible
  */
 async function saveHistoryToKV(chatId, messages) {
-  if (!kv || !chatId || !messages) return;
+  if (!kv || !chatId || !messages) {
+    console.log(`ℹ️ Saltando guardado en KV: kv=${!!kv}, chatId=${!!chatId}, messages=${!!messages}`);
+    return;
+  }
   
   try {
-    await kv.set(`conversation:history:${chatId}`, messages);
-    console.log(`✅ Historial guardado en KV para chat ${chatId} (${messages.length} mensajes)`);
+    // Validar que chatId sea un número o string válido
+    const chatIdStr = String(chatId);
+    if (!chatIdStr || chatIdStr === 'undefined' || chatIdStr === 'null') {
+      console.warn(`⚠️ Chat ID inválido para guardar en KV: ${chatId}`);
+      return;
+    }
+    
+    // Validar que messages sea un array
+    if (!Array.isArray(messages)) {
+      console.warn(`⚠️ Messages no es un array válido para guardar en KV`);
+      return;
+    }
+    
+    await kv.set(`conversation:history:${chatIdStr}`, messages);
+    console.log(`✅ Historial guardado en KV para chat ${chatIdStr} (${messages.length} mensajes)`);
   } catch (error) {
-    console.error("Error al guardar historial en KV:", error);
-    throw error; // Re-lanzar para que el caller pueda manejarlo
+    console.error("Error al guardar historial en KV:", error.message || error);
+    // No re-lanzar el error para que no interrumpa el flujo principal
   }
 }
 
@@ -2222,13 +2267,21 @@ async function loadHistoryFromKV(chatId) {
   if (!kv || !chatId) return;
   
   try {
-    const history = await kv.get(`conversation:history:${chatId}`);
+    // Validar que chatId sea válido
+    const chatIdStr = String(chatId);
+    if (!chatIdStr || chatIdStr === 'undefined' || chatIdStr === 'null') {
+      console.warn(`⚠️ Chat ID inválido para cargar desde KV: ${chatId}`);
+      return;
+    }
+    
+    const history = await kv.get(`conversation:history:${chatIdStr}`);
     if (history && Array.isArray(history) && history.length > 0) {
       conversationHistory.set(chatId, history);
-      console.log(`✅ Historial cargado desde KV para chat ${chatId} (${history.length} mensajes)`);
+      console.log(`✅ Historial cargado desde KV para chat ${chatIdStr} (${history.length} mensajes)`);
     }
   } catch (error) {
-    console.error("Error al cargar historial desde KV:", error);
+    console.error("Error al cargar historial desde KV:", error.message || error);
+    // No re-lanzar el error, continuar sin historial de KV
   }
 }
 
