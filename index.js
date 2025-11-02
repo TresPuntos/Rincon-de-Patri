@@ -6,8 +6,23 @@ const express = require("express");
 const axios = require("axios");
 const path = require("path");
 const fs = require("fs");
-const pdf = require("pdf-parse");
-require("dotenv").config();
+
+// Cargar pdf-parse de forma opcional para evitar errores en Vercel
+let pdf = null;
+try {
+  pdf = require("pdf-parse");
+} catch (e) {
+  console.warn("⚠️ pdf-parse no disponible, los PDFs no se podrán cargar");
+}
+
+// dotenv solo en desarrollo
+if (!process.env.VERCEL) {
+  try {
+    require("dotenv").config();
+  } catch (e) {
+    console.warn("⚠️ dotenv no disponible");
+  }
+}
 
 // Intentar importar Vercel KV y Blob (opcionales)
 let kv = null;
@@ -34,27 +49,29 @@ const app = express();
 
 // Variables de entorno
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
-const TELEGRAM_URL = `https://api.telegram.org/bot${TELEGRAM_TOKEN}`;
+const TELEGRAM_URL = TELEGRAM_TOKEN ? `https://api.telegram.org/bot${TELEGRAM_TOKEN}` : null;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "admin123"; // Cambia esto en producción
+
+// Validación más suave para evitar crashes en Vercel
+if (!TELEGRAM_TOKEN || !OPENAI_API_KEY) {
+  console.warn("⚠️ ADVERTENCIA: Variables de entorno no configuradas completamente");
+  console.warn("TELEGRAM_TOKEN:", TELEGRAM_TOKEN ? "✓" : "✗");
+  console.warn("OPENAI_API_KEY:", OPENAI_API_KEY ? "✓" : "✗");
+}
 
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Validar variables de entorno
-if (!TELEGRAM_TOKEN || !OPENAI_API_KEY) {
-  console.error("❌ ERROR: Faltan variables de entorno requeridas (TELEGRAM_TOKEN, OPENAI_API_KEY)");
-  console.error("TELEGRAM_TOKEN:", TELEGRAM_TOKEN ? "✓ Configurado" : "✗ FALTA");
-  console.error("OPENAI_API_KEY:", OPENAI_API_KEY ? "✓ Configurado" : "✗ FALTA");
-} else {
-  // Validar formato de las keys
-  if (!TELEGRAM_TOKEN.includes(":")) {
-    console.error("⚠️ ADVERTENCIA: TELEGRAM_TOKEN parece tener formato incorrecto (debe contener ':')");
-  }
-  if (!OPENAI_API_KEY.startsWith("sk-")) {
-    console.error("⚠️ ADVERTENCIA: OPENAI_API_KEY parece tener formato incorrecto (debe comenzar con 'sk-')");
-    console.error("Primeros caracteres:", OPENAI_API_KEY.substring(0, 10) + "...");
+// Validar formato de las keys (solo si están presentes)
+if (TELEGRAM_TOKEN && !TELEGRAM_TOKEN.includes(":")) {
+  console.warn("⚠️ ADVERTENCIA: TELEGRAM_TOKEN parece tener formato incorrecto (debe contener ':')");
+}
+if (OPENAI_API_KEY && !OPENAI_API_KEY.startsWith("sk-")) {
+  console.warn("⚠️ ADVERTENCIA: OPENAI_API_KEY parece tener formato incorrecto (debe comenzar con 'sk-')");
+  if (OPENAI_API_KEY.length > 10) {
+    console.warn("Primeros caracteres:", OPENAI_API_KEY.substring(0, 10) + "...");
   }
 }
 
@@ -130,6 +147,10 @@ async function loadInstructionDocs() {
         
         if (found && foundPath) {
           try {
+            if (!pdf) {
+              console.warn(`⚠️ pdf-parse no disponible, saltando ${pdfPath}`);
+              continue;
+            }
             const dataBuffer = fs.readFileSync(foundPath);
             console.log(`📄 Leyendo PDF: ${foundPath} (${dataBuffer.length} bytes)`);
             const data = await pdf(dataBuffer);
@@ -172,13 +193,21 @@ async function loadInstructionDocs() {
 }
 
 // Cargar documentos al iniciar (si están disponibles)
-// En Vercel, esto puede fallar silenciosamente, así que lo hacemos sin bloquear
-if (typeof loadInstructionDocs === 'function') {
-  loadInstructionDocs().catch(err => {
-    console.error("❌ Error crítico al cargar documentos de instrucciones:", err.message || err);
-    // No bloquear la aplicación si falla la carga de PDFs
-    instructionDocs = "";
+// En Vercel serverless, hacerlo de forma asíncrona y no bloquear
+// Solo ejecutar si NO estamos en Vercel o si se permite explícitamente
+if (!process.env.VERCEL || process.env.ALLOW_PDF_LOAD === 'true') {
+  // Ejecutar de forma asíncrona sin bloquear
+  setImmediate(() => {
+    if (typeof loadInstructionDocs === 'function') {
+      loadInstructionDocs().catch(err => {
+        console.error("❌ Error al cargar documentos:", err.message || err);
+        instructionDocs = "";
+      });
+    }
   });
+} else {
+  console.log("ℹ️ Modo Vercel: Saltando carga inicial de PDFs");
+  instructionDocs = "";
 }
 
 // ========================
