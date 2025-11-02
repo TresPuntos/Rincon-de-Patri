@@ -1340,7 +1340,34 @@ app.post("/webhook", async (req, res) => {
         const config = await getBotConfig();
         const welcomeMsg = config.welcomeMessage || "👋 Hola, soy tu psicólogo virtual. Estoy aquí para escucharte y ayudarte. ¿En qué puedo ayudarte hoy?";
         await sendTelegramMessage(chatId, welcomeMsg);
-      } else {
+      } 
+      // Comando /historial para ver el historial clínico
+      else if (userText === "/historial" || userText === "/historialclinico") {
+        console.log("📋 Comando /historial recibido");
+        await loadClinicalHistoryFromKV(chatId);
+        const history = getClinicalHistory(chatId);
+        
+        if (history && history.length > 0) {
+          let msg = `🏥 *TU HISTORIAL CLÍNICO*\n\n*Total de sesiones:* ${history.length}\n\n`;
+          history.slice(-5).forEach((note) => {
+            const date = new Date(note.timestamp);
+            msg += `*Sesión ${note.sessionNumber}* - ${date.toLocaleDateString('es-ES')}\n`;
+            msg += `${note.note.substring(0, 500)}...\n\n`;
+          });
+          if (history.length > 5) {
+            msg += `\n*Ver completo:* https://rinconde-patri.vercel.app/historial.html`;
+          }
+          await sendTelegramMessage(chatId, msg);
+        } else {
+          await sendTelegramMessage(chatId, "📋 Aún no hay notas clínicas registradas. El bot generará notas automáticamente durante las conversaciones.\n\n*Acceso completo:* https://rinconde-patri.vercel.app/historial.html");
+        }
+      } 
+      // Comando /admin para ver panel
+      else if (userText === "/admin") {
+        console.log("⚙️ Comando /admin recibido");
+        await sendTelegramMessage(chatId, `⚙️ *Panel de Administración*\n\nAccede al panel completo en:\nhttps://rinconde-patri.vercel.app/admin`);
+      }
+      else {
         console.log("⚠️ Mensaje ignorado (sin texto o comando no reconocido)");
       }
       return res.sendStatus(200);
