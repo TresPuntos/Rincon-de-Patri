@@ -6,8 +6,14 @@ Bot de psicólogo virtual para Telegram usando OpenAI GPT-3.5-turbo, desplegado 
 
 - ✅ Integración con Telegram Bot API
 - ✅ Respuestas inteligentes usando OpenAI GPT-3.5-turbo
-- ✅ Historial de conversación en memoria
+- ✅ **Historial de conversación ampliado (50 mensajes)**
+- ✅ **Sistema de memoria inteligente con resúmenes automáticos**
+- ✅ **Categorización automática de conversaciones**
+- ✅ **Historial clínico profesional** (como un psicólogo real)
+- ✅ **Generación automática de notas clínicas**
+- ✅ **Memoria persistente con Vercel KV**
 - ✅ Manejo de errores robusto
+- ✅ Panel de administración completo con visor de historial
 - ✅ Desplegado en Vercel (serverless)
 - ✅ Health check endpoints
 
@@ -116,45 +122,57 @@ Bot de psicólogo virtual para Telegram usando OpenAI GPT-3.5-turbo, desplegado 
 - `GET /` - Health check básico
 - `GET /health` - Health check alternativo
 - `POST /webhook` - Endpoint para recibir mensajes de Telegram
-- `GET /admin` - Panel de administración
+- `GET /admin` - Panel de administración completo
+- `GET /historial-clinico` - Vista dedicada del historial clínico de Patri
 - `GET /api/config` - Obtener configuración del bot (requiere autenticación)
 - `POST /api/config` - Guardar configuración del bot (requiere autenticación)
+- `POST /api/auth` - Autenticación para el panel de administración
+- `GET /api/summaries/:chatId` - Ver resúmenes de conversación por categorías (requiere autenticación)
+- `GET /api/clinical-history/:chatId` - Ver historial clínico completo de Patri (requiere autenticación)
+- `GET /api/clinical-history/:chatId/markdown` - Descargar historial clínico en formato Markdown (requiere autenticación)
 - `GET /api/documents` - Listar documentos (requiere autenticación)
 - `POST /api/documents` - Subir documento (requiere autenticación)
 - `DELETE /api/documents/:path` - Eliminar documento (requiere autenticación)
 
-## 💾 Almacenamiento
+## 💾 Almacenamiento y Sistema de Memoria
 
-Actualmente el bot usa **almacenamiento en memoria** para el historial de conversaciones. Esto significa que:
-- ✅ Funciona sin configuración adicional
-- ⚠️ El historial se pierde cuando Vercel hace un nuevo deploy
-- ⚠️ El historial se reinicia periódicamente (Vercel tiene cold starts)
+El bot incluye un **sistema de memoria inteligente** con las siguientes características:
 
-### Migrar a Vercel KV (Opcional, para persistencia)
+### Historial de Conversación
+- **Últimos 50 mensajes** se mantienen en memoria para contexto inmediato
+- Funciona sin configuración adicional en memoria local
+- Con Vercel KV, persiste entre sesiones
+- Aumentado para proporcionar más contexto al bot
 
-Si necesitas persistencia permanente del historial, puedes usar Vercel KV (Redis):
+### Sistema de Resúmenes Automáticos 🧠
+El bot genera automáticamente **resúmenes de conversaciones** cada 10 mensajes:
 
-1. Añade Vercel KV a tu proyecto en el dashboard de Vercel
-2. Instala el paquete: `npm install @vercel/kv`
-3. Reemplaza las funciones `saveMessage()` y `getHistory()` en `index.js` con:
-   ```javascript
-   const { kv } = require('@vercel/kv');
-   
-   async function saveMessage(chatId, userText, botResponse) {
-     const key = `chat:${chatId}`;
-     const messages = await kv.get(key) || [];
-     messages.push({ user: userText, bot: botResponse, timestamp: new Date().toISOString() });
-     if (messages.length > MAX_HISTORY_MESSAGES) {
-       messages.shift();
-     }
-     await kv.set(key, messages);
-   }
-   
-   async function getHistory(chatId) {
-     const key = `chat:${chatId}`;
-     return await kv.get(key) || [];
-   }
-   ```
+- **Generación automática**: El bot analiza la conversación y crea resúmenes concisos (2-3 frases)
+- **Categorización inteligente**: Las conversaciones se clasifican en categorías:
+  - Ansiedad y estrés
+  - Tristeza y depresión
+  - Cansancio y fatiga
+  - Autoestima y autoconfianza
+  - Dolor físico
+  - Ejercicios y técnicas
+  - Celebración y avances
+  - Otros
+
+### Memoria Persistente con Vercel KV (Recomendado) 💾
+
+El sistema está optimizado para usar Vercel KV automáticamente si está disponible:
+
+1. **Añade Vercel KV** a tu proyecto en el dashboard de Vercel:
+   - Settings → Storage → Create Database → Vercel KV
+   - Se añade automáticamente como variable de entorno
+
+2. **Beneficios**:
+   - ✅ Los resúmenes persisten entre sesiones
+   - ✅ El bot recuerda conversaciones anteriores
+   - ✅ Se mantiene la categorización histórica
+   - ✅ Funciona sin configuración adicional en el código
+
+3. **Sin Vercel KV**: El sistema funciona en memoria, pero los resúmenes se reinician con cada deploy
 
 ## 🛠️ Personalización
 
@@ -172,13 +190,20 @@ El bot incluye un panel de administración completo donde puedes:
 1. **Configurar el prompt del psicólogo** - Personaliza cómo se comporta el bot
 2. **Cambiar el mensaje de bienvenida** - Personaliza el mensaje `/start`
 3. **Ajustar parámetros de OpenAI** - Modelo, tokens, temperatura
-4. **Subir documentos** - Comparte documentos que el bot puede usar como referencia
+4. **Ver historial clínico de Patri** - Consulta todas las notas clínicas generadas
+5. **Descargar historial clínico** - Exporta el historial completo en formato Markdown
+6. **Subir documentos** - Comparte documentos que el bot puede usar como referencia
 
-**Para acceder al panel:**
+**Para acceder al historial clínico:**
 
-1. Ve a `https://tu-proyecto.vercel.app/admin`
+1. Ve a `https://tu-proyecto.vercel.app/historial-clinico` (vista dedicada)
+   - O también: `https://tu-proyecto.vercel.app/admin` (panel completo)
 2. Ingresa la contraseña (por defecto: `admin123`)
-3. Configura la variable de entorno `ADMIN_PASSWORD` en Vercel para cambiar la contraseña
+3. Introduce el Chat ID de Patri
+4. Haz clic en "Ver Historial Clínico"
+5. Descarga el historial en Markdown si lo necesitas
+
+**Nota:** Configura la variable de entorno `ADMIN_PASSWORD` en Vercel para cambiar la contraseña
 
 **Configurar Vercel KV y Blob Storage (Recomendado):**
 
@@ -195,6 +220,77 @@ Para que la configuración y documentos persistan:
    - Se añadirá automáticamente como variable de entorno
 
 **Nota:** Sin Vercel KV y Blob, el sistema funcionará en memoria (se reinicia con cada deploy).
+
+## 🧠 Cómo Funciona el Sistema de Memoria
+
+El bot utiliza un sistema de **memoria en capas** para mantener el contexto y proporcionar respuestas personalizadas:
+
+### Capa 1: Historial Reciente (50 mensajes)
+- Mantiene los últimos 50 intercambios usuario-bot
+- Se usa para contexto inmediato en la conversación
+- Se pierde al reiniciar si no hay Vercel KV
+
+### Capa 2: Resúmenes Categorizados
+- Cada 10 mensajes, el bot genera automáticamente un resumen
+- El resumen captura:
+  - Estado emocional de Patri
+  - Temas principales discutidos
+  - Progreso o dificultades
+- Cada resumen se clasifica en una categoría emocional
+- Se mantienen hasta 5 resúmenes por categoría
+
+### Capa 3: Contexto Compartido
+- Al generar una respuesta, el bot incluye:
+  - Resúmenes relevantes por categoría
+  - Fechas de las conversaciones anteriores
+  - Información contextual para personalización
+
+**Ejemplo de memoria activa:**
+```
+📚 MEMORIA DE CONVERSACIONES ANTERIORES (por categorías):
+Ansiedad y estrés:
+  - Patri expresó preocupación sobre su capacidad para manejar situaciones sociales. Le propusimos técnicas de respiración que le ayudaron. (15/01/2024)
+  - Mencionó sentirse abrumada por las tareas diarias. Trabajamos en organización y priorización. (20/01/2024)
+
+Celebración y avances:
+  - Patri compartió que logró mantener la calma durante una situación estresante. Mencionó sentirse orgullosa. (22/01/2024)
+```
+
+### Beneficios
+- ✅ **Continuidad**: El bot recuerda temas y progreso anteriores
+- ✅ **Personalización**: Respuestas adaptadas a la historia de Patri
+- ✅ **Eficiencia**: Solo se almacenan resúmenes concisos
+- ✅ **Organización**: Clasificación automática por emociones/temas
+
+### Capa 4: Historial Clínico Profesional 🏥
+
+El bot funciona como un psicólogo real, generando **notas clínicas profesionales** periódicamente:
+
+- **Generación automática**: Cada 20 mensajes, el bot crea una nota clínica detallada
+- **Estructura profesional**: Incluye:
+  - Fecha y número de sesión
+  - Autoreporte de la paciente
+  - Intervenciones realizadas
+  - Observaciones terapéuticas
+  - Fortalezas identificadas
+  - Recomendaciones para próximas sesiones
+  
+**Acceso al Historial Clínico:**
+
+1. Desde el panel de administración (`/admin`)
+2. Introduce el Chat ID de Patri
+3. Haz clic en "Ver Historial Clínico"
+4. Descarga como Markdown para archivo físico
+
+**Ejemplo de nota clínica:**
+```
+FECHA: 23/01/2024
+SESIÓN: 3
+
+AUTORREPORTE DE LA PACIENTE:
+Patri expresó sentirse abrumada por las tareas diarias y cansancio físico...
+[toda la nota continua]
+```
 
 ## ⚠️ Notas Importantes
 
