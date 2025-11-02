@@ -97,7 +97,7 @@ const clinicalHistory = new Map(); // chatId -> historial clínico completo (com
 const MAX_HISTORY_MESSAGES = 50; // Aumentado para mantener más contexto
 const MAX_SUMMARY_MESSAGES = 10; // Después de cuántos mensajes generar resumen (reducido para generar más frecuentemente)
 const MAX_SUMMARIES_PER_CATEGORY = 5; // Máximo de resúmenes por categoría
-const CLINICAL_NOTES_INTERVAL = 20; // Generar nota clínica cada N mensajes
+const CLINICAL_NOTES_INTERVAL = 10; // Generar nota clínica cada N mensajes (reducido de 20 a 10 para generar más frecuentemente)
 
 // Cargar contenido de los PDFs de instrucciones (una vez al iniciar)
 let instructionDocs = "";
@@ -1857,11 +1857,19 @@ app.post("/webhook", async (req, res) => {
 
     // 7. Generar nota clínica periódicamente (cada CLINICAL_NOTES_INTERVAL mensajes)
     const clinicalHistoryList = getClinicalHistory(chatId);
-    const shouldGenerateClinicalNote = messagesAfterSave.length > 0 && 
-                                       messagesAfterSave.length % CLINICAL_NOTES_INTERVAL === 0 &&
-                                       messagesAfterSave.length >= CLINICAL_NOTES_INTERVAL;
     
-    if (shouldGenerateClinicalNote && !clinicalHistoryList.some(n => n.messageCount === messagesAfterSave.length)) {
+    // Verificar si debemos generar una nota clínica
+    // Generamos si:
+    // - Hay suficientes mensajes (mínimo CLINICAL_NOTES_INTERVAL)
+    // - El número de mensajes es múltiplo del intervalo
+    // - Y no hemos generado ya una nota para este número exacto de mensajes
+    const shouldGenerateClinicalNote = messagesAfterSave.length >= CLINICAL_NOTES_INTERVAL && 
+                                       messagesAfterSave.length % CLINICAL_NOTES_INTERVAL === 0 &&
+                                       !clinicalHistoryList.some(n => n.messageCount === messagesAfterSave.length);
+    
+    console.log(`📊 Estado de notas clínicas: ${messagesAfterSave.length} mensajes, ${clinicalHistoryList.length} notas existentes, intervalo=${CLINICAL_NOTES_INTERVAL}, generar=${shouldGenerateClinicalNote}`);
+    
+    if (shouldGenerateClinicalNote) {
       console.log(`📋 Generando nota clínica (${messagesAfterSave.length} mensajes totales)...`);
       
       // Generar nota clínica en background (no bloqueante)
@@ -1870,11 +1878,28 @@ app.post("/webhook", async (req, res) => {
           if (clinicalNote) {
             await saveClinicalNote(chatId, clinicalNote);
             console.log(`✅ Nota clínica generada y guardada exitosamente`);
+            
+            // Cargar de nuevo desde KV para asegurar que está actualizado
+            try {
+              await loadClinicalHistoryFromKV(chatId);
+            } catch (err) {
+              console.warn("⚠️ Error al recargar historial clínico desde KV:", err.message);
+            }
+          } else {
+            console.warn("⚠️ generateClinicalNote devolvió null (no se generó nota)");
           }
         })
         .catch(err => {
-          console.error("Error al generar nota clínica en background:", err);
+          console.error("❌ Error al generar nota clínica en background:", err);
+          console.error("Stack:", err.stack);
         });
+    } else if (messagesAfterSave.length >= CLINICAL_NOTES_INTERVAL) {
+      // Si ya tenemos suficientes mensajes pero no se generó nota, informar
+      const lastNote = clinicalHistoryList.length > 0 ? clinicalHistoryList[clinicalHistoryList.length - 1] : null;
+      const lastNoteMessageCount = lastNote ? lastNote.messageCount : 0;
+      if (messagesAfterSave.length - lastNoteMessageCount >= CLINICAL_NOTES_INTERVAL) {
+        console.log(`ℹ️ Hay ${messagesAfterSave.length} mensajes pero la última nota fue en ${lastNoteMessageCount}. Próxima nota en ${Math.ceil(messagesAfterSave.length / CLINICAL_NOTES_INTERVAL) * CLINICAL_NOTES_INTERVAL} mensajes.`);
+      }
     }
 
     res.sendStatus(200);
