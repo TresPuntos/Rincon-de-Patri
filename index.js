@@ -2130,10 +2130,11 @@ console.log("  ✓ GET /api/clinical-history/:chatId");
 console.log("  ✓ GET /api/clinical-history/:chatId/markdown");
 console.log("  ✓ POST /webhook");
 
+// Exportar app para uso en Vercel Serverless Functions
 module.exports = app;
 
-// Para desarrollo local (opcional)
-if (require.main === module) {
+// Para desarrollo local SOLO si se ejecuta directamente (no cuando se importa)
+if (require.main === module && !process.env.VERCEL) {
   const PORT = process.env.PORT || 3000;
   app.listen(PORT, () => {
     console.log(`🤖 Bot corriendo en http://localhost:${PORT}`);
