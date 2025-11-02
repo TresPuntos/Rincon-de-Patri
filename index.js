@@ -1286,16 +1286,20 @@ function requireAuth(req, res, next) {
 async function getBotConfig() {
   try {
     if (kv) {
-      const config = await kv.get("bot:config");
-      if (config) {
-        // Asegurar que el prompt incluye la documentación si está disponible
-        if (config.systemPrompt && instructionDocs && instructionDocs.trim().length > 0) {
-          // Si el prompt no incluye ya la documentación, añadirla
-          if (!config.systemPrompt.includes("DOCUMENTACIÓN DISPONIBLE")) {
-            config.systemPrompt = config.systemPrompt + `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+      try {
+        const config = await kv.get("bot:config");
+        if (config) {
+          // Asegurar que el prompt incluye la documentación si está disponible
+          if (config.systemPrompt && instructionDocs && instructionDocs.trim().length > 0) {
+            // Si el prompt no incluye ya la documentación, añadirla
+            if (!config.systemPrompt.includes("DOCUMENTACIÓN DISPONIBLE")) {
+              config.systemPrompt = config.systemPrompt + `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+            }
           }
+          return config;
         }
-        return config;
+      } catch (kvError) {
+        console.warn("⚠️ Error al obtener config de KV (usando default):", kvError.message);
       }
     }
     // Si no hay KV, usar variable global (si existe)
@@ -1709,11 +1713,22 @@ app.post("/webhook", async (req, res) => {
       return res.sendStatus(200);
     }
 
+    // Validar que tenemos las credenciales necesarias
+    if (!TELEGRAM_URL || !OPENAI_API_KEY) {
+      console.error("❌ ERROR: Faltan credenciales. TELEGRAM_URL:", !!TELEGRAM_URL, "OPENAI_API_KEY:", !!OPENAI_API_KEY);
+      await sendTelegramMessage(chatId, "⚠️ El bot no está configurado correctamente. Por favor, contacta con el administrador.");
+      return res.sendStatus(200);
+    }
+
     // Mostrar "escribiendo..." en Telegram
-    await axios.post(`${TELEGRAM_URL}/sendChatAction`, {
-      chat_id: chatId,
-      action: "typing",
-    });
+    try {
+      await axios.post(`${TELEGRAM_URL}/sendChatAction`, {
+        chat_id: chatId,
+        action: "typing",
+      });
+    } catch (err) {
+      console.warn("⚠️ Error al enviar typing action (continuando):", err.message);
+    }
 
     // 1. Cargar resúmenes, historial clínico e historial de conversación desde Vercel KV (si están disponibles)
     console.log(`📥 Cargando datos desde Vercel KV para Chat ID: ${chatId}`);
@@ -1843,21 +1858,50 @@ app.post("/webhook", async (req, res) => {
 // ========================
 async function sendTelegramMessage(chatId, text) {
   try {
-    // Limpiar formato Markdown problemático
-    const cleanText = text.replace(/\*+/g, ''); // Remover asteriscos problemáticos
+    // Validar que tenemos TELEGRAM_URL
+    if (!TELEGRAM_URL) {
+      console.error("❌ ERROR: TELEGRAM_URL no está definido");
+      throw new Error("TELEGRAM_URL no configurado");
+    }
+
+    if (!chatId) {
+      console.error("❌ ERROR: chatId no está definido");
+      throw new Error("chatId no válido");
+    }
+
+    if (!text || typeof text !== 'string') {
+      console.error("❌ ERROR: text no es válido:", typeof text);
+      throw new Error("text no válido");
+    }
+
+    // Limpiar formato Markdown problemático y asegurar que no esté vacío
+    let cleanText = String(text).trim();
+    if (!cleanText || cleanText.length === 0) {
+      console.warn("⚠️ Texto vacío, usando mensaje por defecto");
+      cleanText = "Lo siento, no pude generar una respuesta. Por favor, intenta de nuevo.";
+    }
+    
+    // Limitar tamaño del mensaje (Telegram tiene límite de 4096 caracteres)
+    if (cleanText.length > 4000) {
+      cleanText = cleanText.substring(0, 3997) + "...";
+    }
     
     const response = await axios.post(`${TELEGRAM_URL}/sendMessage`, {
       chat_id: chatId,
       text: cleanText,
+    }, {
+      timeout: 10000 // 10 segundos timeout
     });
     
-    console.log(`✅ Mensaje enviado a Telegram (chatId: ${chatId})`);
+    console.log(`✅ Mensaje enviado a Telegram (chatId: ${chatId}, length: ${cleanText.length})`);
     return response.data;
   } catch (error) {
     console.error("❌ Error al enviar mensaje a Telegram:");
     console.error("Chat ID:", chatId);
+    console.error("Text length:", text?.length);
     console.error("Error:", error.response?.data || error.message);
     console.error("Status:", error.response?.status);
+    console.error("Stack:", error.stack);
     throw error;
   }
 }
@@ -1873,11 +1917,24 @@ async function generateResponse(message, history, chatId) {
     console.log(`   Historial: ${history?.length || 0} mensajes`);
     
     // Obtener configuración del bot (desde KV o memoria) - SIEMPRE revisar antes de responder
-    const config = await getBotConfig();
-    console.log(`✅ Configuración cargada: modelo=${config.model}, tokens=${config.maxTokens}, temp=${config.temperature}`);
+    let config;
+    try {
+      config = await getBotConfig();
+      if (!config || typeof config !== 'object') {
+        throw new Error("Config inválida recibida");
+      }
+      console.log(`✅ Configuración cargada: modelo=${config.model || 'no definido'}, tokens=${config.maxTokens || 'no definido'}, temp=${config.temperature || 'no definido'}`);
+    } catch (configError) {
+      console.error("❌ Error al cargar configuración:", configError);
+      throw new Error(`Error al cargar configuración: ${configError.message}`);
+    }
     
     // Construir el prompt del sistema con instrucciones adicionales
     let systemPrompt = config.systemPrompt || "";
+    if (!systemPrompt || systemPrompt.trim().length === 0) {
+      console.warn("⚠️ SystemPrompt vacío, usando prompt mínimo");
+      systemPrompt = "Eres un psicólogo virtual. Responde de forma empática y personalizada.";
+    }
     console.log(`📝 Prompt base: ${systemPrompt.length} caracteres`);
     
     // Añadir resúmenes de conversaciones anteriores si existen - SIEMPRE revisar antes de responder
@@ -1924,24 +1981,55 @@ async function generateResponse(message, history, chatId) {
     // Añadir el mensaje actual
     messages.push({ role: "user", content: message });
 
+    // Validar que tenemos OPENAI_API_KEY
+    if (!OPENAI_API_KEY) {
+      throw new Error("OPENAI_API_KEY no configurado");
+    }
+
+    // Validar modelo y parámetros
+    const model = config.model || "gpt-3.5-turbo";
+    const maxTokens = config.maxTokens || 400;
+    const temperature = config.temperature || 0.7;
+
+    console.log(`📞 Llamando a OpenAI API: model=${model}, maxTokens=${maxTokens}, temperature=${temperature}`);
+    
     // Llamar a la API de OpenAI (Chat Completions)
-    const completion = await axios.post(
-      "https://api.openai.com/v1/chat/completions",
-      {
-        model: config.model,
-        messages: messages,
-        max_tokens: config.maxTokens,
-        temperature: config.temperature,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
+    let completion;
+    try {
+      completion = await axios.post(
+        "https://api.openai.com/v1/chat/completions",
+        {
+          model: model,
+          messages: messages,
+          max_tokens: maxTokens,
+          temperature: temperature,
         },
-      }
-    );
+        {
+          headers: {
+            Authorization: `Bearer ${OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          timeout: 30000 // 30 segundos timeout
+        }
+      );
+    } catch (openaiError) {
+      console.error("❌ Error en llamada a OpenAI API:");
+      console.error("Status:", openaiError.response?.status);
+      console.error("Error:", openaiError.response?.data || openaiError.message);
+      throw new Error(`Error al llamar a OpenAI: ${openaiError.response?.data?.error?.message || openaiError.message}`);
+    }
+
+    if (!completion?.data?.choices?.[0]?.message?.content) {
+      console.error("❌ Respuesta inválida de OpenAI:", JSON.stringify(completion?.data));
+      throw new Error("Respuesta inválida de OpenAI");
+    }
 
     let response = completion.data.choices[0].message.content.trim();
+    
+    if (!response || response.length === 0) {
+      console.warn("⚠️ Respuesta vacía de OpenAI, usando respuesta por defecto");
+      response = "Lo siento, no pude generar una respuesta adecuada. ¿Puedes reformular tu mensaje?";
+    }
 
     // Detectar y eliminar mensajes genéricos al inicio
     const genericPatterns = [
