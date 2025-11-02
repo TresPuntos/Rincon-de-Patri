@@ -2185,4 +2185,3 @@ if (require.main === module && !process.env.VERCEL) {
   });
 }
 
-// Force rebuild Sun Nov  2 20:50:06 CET 2025
