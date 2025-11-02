@@ -2180,7 +2180,18 @@ async function generateResponse(message, history, chatId) {
       if (!config || typeof config !== 'object') {
         throw new Error("Config inválida recibida");
       }
-      console.log(`✅ Configuración cargada: modelo=${config.model || 'no definido'}, tokens=${config.maxTokens || 'no definido'}, temp=${config.temperature || 'no definido'}`);
+      console.log(`✅ Configuración cargada:`);
+      console.log(`   - Modelo: ${config.model || 'no definido'}`);
+      console.log(`   - MaxTokens: ${config.maxTokens || 'no definido'}`);
+      console.log(`   - Temperature: ${config.temperature || 'no definido'}`);
+      console.log(`   - SystemPrompt: ${config.systemPrompt?.length || 0} caracteres`);
+      console.log(`   - WelcomeMessage: ${config.welcomeMessage?.length || 0} caracteres`);
+      
+      // Verificar que el prompt no esté vacío
+      if (!config.systemPrompt || config.systemPrompt.trim().length === 0) {
+        console.warn("⚠️ SystemPrompt vacío, usando prompt mínimo");
+        config.systemPrompt = "Eres un psicólogo virtual. Responde de forma empática y personalizada.";
+      }
     } catch (configError) {
       console.error("❌ Error al cargar configuración:", configError);
       throw new Error(`Error al cargar configuración: ${configError.message}`);
@@ -2188,11 +2199,8 @@ async function generateResponse(message, history, chatId) {
     
     // Construir el prompt del sistema con instrucciones adicionales
     let systemPrompt = config.systemPrompt || "";
-    if (!systemPrompt || systemPrompt.trim().length === 0) {
-      console.warn("⚠️ SystemPrompt vacío, usando prompt mínimo");
-      systemPrompt = "Eres un psicólogo virtual. Responde de forma empática y personalizada.";
-    }
-    console.log(`📝 Prompt base: ${systemPrompt.length} caracteres`);
+    console.log(`📝 Prompt base cargado: ${systemPrompt.length} caracteres`);
+    console.log(`   Primeros 200 caracteres: ${systemPrompt.substring(0, 200)}...`);
     
     // Añadir resúmenes de conversaciones anteriores si existen - SIEMPRE revisar antes de responder
     if (chatId) {
