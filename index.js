@@ -604,6 +604,9 @@ app.get("/admin", (req, res) => {
     console.log("📥 Petición GET /admin recibida");
     console.log("✅ Serviendo panel admin");
     res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.send(adminHTML);
   } catch (error) {
     console.error("❌ Error al servir /admin:", error);
@@ -969,6 +972,9 @@ app.get("/historial-clinico", (req, res) => {
 </html>`;
 
     res.setHeader("Content-Type", "text/html; charset=utf-8");
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
     res.send(clinicalHistoryHTML);
   } catch (error) {
     console.error("❌ Error al servir historial clínico:", error);
