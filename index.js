@@ -793,36 +793,6 @@ const adminHTML = `<!DOCTYPE html>
             alert.className = \`alert \${type} show\`;
             setTimeout(() => { alert.classList.remove('show'); }, 5000);
         }
-        async function viewClinicalHistory() {
-            const chatId = document.getElementById('chatIdInput').value;
-            if (!chatId) {
-                showAlert('alert', 'Por favor ingresa un Chat ID', 'error');
-                return;
-            }
-            try {
-                const response = await fetch(\`/api/clinical-history/\${chatId}\`, {
-                    headers: { 'Authorization': \`Bearer \${authToken}\` }
-                });
-                const data = await response.json();
-                if (response.ok) {
-                    const container = document.getElementById('clinicalHistoryContainer');
-                    const content = document.getElementById('clinicalHistoryContent');
-                    container.style.display = 'block';
-                    if (data.hasNotes) {
-                        content.textContent = data.formattedHistory;
-                        showAlert('alert', \`✅ Historial cargado: \${data.totalClinicalNotes} notas clínicas\`, 'success');
-                    } else {
-                        content.textContent = 'Sin notas clínicas registradas aún. El bot generará notas clínicas periódicamente.';
-                        showAlert('alert', '⚠️ No hay notas clínicas disponibles aún', 'error');
-                    }
-                } else {
-                    showAlert('alert', data.error || 'Error al cargar el historial', 'error');
-                }
-            } catch (e) {
-                showAlert('alert', 'Error al conectar con el servidor', 'error');
-                console.error(e);
-            }
-        }
         async function loadCurrentPrompt() {
             const chatId = document.getElementById('promptChatIdInput').value || null;
             try {
@@ -849,36 +819,6 @@ const adminHTML = `<!DOCTYPE html>
                 }
             } catch (e) {
                 showAlert('alert', 'Error al conectar con el servidor', 'error');
-                console.error(e);
-            }
-        }
-        async function downloadClinicalHistory() {
-            const chatId = document.getElementById('chatIdInput').value;
-            if (!chatId) {
-                showAlert('alert', 'Por favor ingresa un Chat ID', 'error');
-                return;
-            }
-            try {
-                const response = await fetch(\`/api/clinical-history/\${chatId}/markdown\`, {
-                    headers: { 'Authorization': \`Bearer \${authToken}\` }
-                });
-                if (response.ok) {
-                    const text = await response.text();
-                    const blob = new Blob([text], { type: 'text/markdown' });
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = \`historial-clinico-patri-\${chatId}-\${new Date().toISOString().split('T')[0]}.md\`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(url);
-                    showAlert('alert', '✅ Historial descargado exitosamente', 'success');
-                } else {
-                    showAlert('alert', 'Error al descargar el historial', 'error');
-                }
-            } catch (e) {
-                showAlert('alert', 'Error al descargar el historial', 'error');
                 console.error(e);
             }
         }
