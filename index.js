@@ -198,7 +198,8 @@ app.get("/", (req, res) => {
   res.json({ 
     status: "ok", 
     message: "Bot Psicólogo Virtual está funcionando",
-    version: "2.2",
+    version: "2.3",
+    buildDate: "2025-11-02T20:00:00Z",
     deployment: {
       vercel: true,
       handler: "api/index.js",
@@ -2184,3 +2185,4 @@ if (require.main === module && !process.env.VERCEL) {
   });
 }
 
+// Force rebuild Sun Nov  2 20:50:06 CET 2025
