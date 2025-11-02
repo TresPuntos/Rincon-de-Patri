@@ -1447,7 +1447,20 @@ async function saveBotConfig(config) {
 app.get("/api/config", requireAuth, async (req, res) => {
   try {
     const config = await getBotConfig();
-    res.json(config);
+    
+    // Asegurar que el prompt incluye la documentación para mostrarlo en el panel
+    let systemPrompt = config.systemPrompt || "";
+    if (instructionDocs && instructionDocs.trim().length > 0) {
+      // Si el prompt no incluye ya la documentación, añadirla para mostrarlo en el panel
+      if (!systemPrompt.includes("DOCUMENTACIÓN DISPONIBLE")) {
+        systemPrompt += `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+      }
+    }
+    
+    res.json({
+      ...config,
+      systemPrompt: systemPrompt
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
