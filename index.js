@@ -44,12 +44,18 @@ try {
 }
 
 try {
-  const { put: putBlob, del: delBlob, list: listBlobs } = require("@vercel/blob");
-  put = putBlob;
-  del = delBlob;
-  list = listBlobs;
+  // Verificar que las variables de entorno estén configuradas antes de inicializar
+  if (process.env.BLOB_READ_WRITE_TOKEN) {
+    const { put: putBlob, del: delBlob, list: listBlobs } = require("@vercel/blob");
+    put = putBlob;
+    del = delBlob;
+    list = listBlobs;
+    console.log("✅ Vercel Blob inicializado correctamente");
+  } else {
+    console.warn("⚠️ Vercel Blob no configurado (falta variable BLOB_READ_WRITE_TOKEN), no se podrán subir documentos");
+  }
 } catch (e) {
-  console.warn("⚠️ Vercel Blob no disponible para almacenar documentos");
+  console.warn("⚠️ Vercel Blob no disponible, no se podrán subir documentos:", e.message);
 }
 
 const app = express();
@@ -1292,10 +1298,11 @@ function requireAuth(req, res, next) {
 // ========================
 async function getBotConfig() {
   try {
+    // Intentar cargar desde KV si está disponible y configurado
     if (kv) {
       try {
         const config = await kv.get("bot:config");
-        if (config) {
+        if (config && typeof config === 'object') {
           // Asegurar que el prompt incluye la documentación si está disponible
           if (config.systemPrompt && instructionDocs && instructionDocs.trim().length > 0) {
             // Si el prompt no incluye ya la documentación, añadirla
@@ -1306,7 +1313,9 @@ async function getBotConfig() {
           return config;
         }
       } catch (kvError) {
-        console.warn("⚠️ Error al obtener config de KV (usando default):", kvError.message);
+        // Error silencioso: si KV falla, usar configuración por defecto o en memoria
+        console.warn("⚠️ Error al obtener config de KV (usando fallback):", kvError.message);
+        // No lanzar el error, continuar con los siguientes métodos
       }
     }
     // Si no hay KV, usar variable global (si existe)
@@ -1543,20 +1552,39 @@ app.post("/api/config", requireAuth, async (req, res) => {
 // ========================
 app.get("/api/documents", requireAuth, async (req, res) => {
   try {
+    // Si Blob no está configurado, devolver lista vacía
     if (!list) {
-      return res.json({ documents: [] });
+      console.log("ℹ️ Vercel Blob no configurado, devolviendo lista vacía");
+      return res.json({ 
+        documents: [],
+        message: "Vercel Blob no está configurado. Los documentos no se pueden subir sin configurar BLOB_READ_WRITE_TOKEN en Vercel."
+      });
     }
-    const { blobs } = await list({ prefix: "documents/" });
-    const documents = blobs.map(blob => ({
-      url: blob.url,
-      pathname: blob.pathname,
-      size: blob.size,
-      uploadedAt: blob.uploadedAt
-    }));
-    res.json({ documents });
+    
+    try {
+      const { blobs } = await list({ prefix: "documents/" });
+      const documents = blobs.map(blob => ({
+        url: blob.url,
+        pathname: blob.pathname,
+        size: blob.size,
+        uploadedAt: blob.uploadedAt
+      }));
+      res.json({ documents });
+    } catch (blobError) {
+      // Si falla la llamada a Blob, devolver lista vacía en lugar de error
+      console.warn("⚠️ Error al listar documentos de Blob (devolviendo lista vacía):", blobError.message);
+      res.json({ 
+        documents: [],
+        warning: "No se pudieron cargar los documentos. Verifica la configuración de Vercel Blob."
+      });
+    }
   } catch (error) {
-    console.error("Error al listar documentos:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Error inesperado al listar documentos:", error);
+    // Siempre devolver lista vacía en lugar de error 500
+    res.json({ 
+      documents: [],
+      error: "Error al cargar documentos"
+    });
   }
 });
 
