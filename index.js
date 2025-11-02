@@ -173,11 +173,54 @@ loadInstructionDocs().catch(err => {
 // Health Check
 // ========================
 app.get("/", (req, res) => {
+  // Verificar que los archivos importantes existen
+  const fs = require('fs');
+  const path = require('path');
+  
+  const checks = {
+    apiHandler: fs.existsSync(path.join(__dirname, 'api', 'index.js')),
+    vercelConfig: fs.existsSync(path.join(__dirname, 'vercel.json')),
+    instructionDocs: fs.existsSync(path.join(__dirname, 'Bot_Patri_Instrucciones')),
+    pdfFiles: []
+  };
+  
+  // Verificar PDFs
+  if (checks.instructionDocs) {
+    const pdfDir = path.join(__dirname, 'Bot_Patri_Instrucciones');
+    try {
+      const files = fs.readdirSync(pdfDir);
+      checks.pdfFiles = files.filter(f => f.endsWith('.pdf'));
+    } catch (e) {
+      checks.pdfFiles = ['Error al leer directorio'];
+    }
+  }
+  
   res.json({ 
     status: "ok", 
     message: "Bot Psicólogo Virtual está funcionando",
-    version: "2.1",
-    routes: ["/", "/health", "/admin", "/historial", "/webhook"],
+    version: "2.2",
+    deployment: {
+      vercel: true,
+      handler: "api/index.js",
+      timestamp: new Date().toISOString()
+    },
+    routes: {
+      public: ["/", "/health", "/admin", "/historial"],
+      api: ["/api/config", "/api/auth", "/api/documents", "/api/summaries/:chatId", "/api/clinical-history/:chatId"],
+      webhook: "/webhook"
+    },
+    files: {
+      apiHandler: checks.apiHandler ? "✅ Presente" : "❌ No encontrado",
+      vercelConfig: checks.vercelConfig ? "✅ Presente" : "❌ No encontrado",
+      instructionDocs: checks.instructionDocs ? `✅ Presente (${checks.pdfFiles.length} PDFs)` : "❌ No encontrado",
+      pdfFiles: checks.pdfFiles.length > 0 ? checks.pdfFiles : "No hay PDFs"
+    },
+    environment: {
+      nodeVersion: process.version,
+      cwd: process.cwd(),
+      __dirname: __dirname,
+      vercel: process.env.VERCEL ? "Sí" : "No"
+    },
     timestamp: new Date().toISOString()
   });
 });
