@@ -1686,11 +1686,13 @@ app.post("/webhook", async (req, res) => {
       action: "typing",
     });
 
-    // 1. Cargar resúmenes y historial clínico desde Vercel KV (si están disponibles)
+    // 1. Cargar resúmenes, historial clínico e historial de conversación desde Vercel KV (si están disponibles)
+    console.log(`📥 Cargando datos desde Vercel KV para Chat ID: ${chatId}`);
     await loadSummariesFromKV(chatId);
     await loadClinicalHistoryFromKV(chatId);
+    await loadHistoryFromKV(chatId); // IMPORTANTE: Cargar historial antes de usar
 
-    // 2. Recuperar historial previo
+    // 2. Recuperar historial previo (ya debería estar cargado desde KV)
     const history = getHistory(chatId);
     console.log(`📚 Historial recuperado: ${history.length} mensajes`);
 
