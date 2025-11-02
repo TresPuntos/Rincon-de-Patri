@@ -1443,6 +1443,13 @@ No tienes que forzar nada, solo escucharte.
 
 async function saveBotConfig(config) {
   try {
+    console.log("💾 Guardando configuración del bot...");
+    console.log(`   - Modelo: ${config.model}`);
+    console.log(`   - MaxTokens: ${config.maxTokens}`);
+    console.log(`   - Temperature: ${config.temperature}`);
+    console.log(`   - SystemPrompt length: ${config.systemPrompt?.length || 0}`);
+    console.log(`   - WelcomeMessage length: ${config.welcomeMessage?.length || 0}`);
+    
     // Intentar guardar en KV si está disponible y configurado correctamente
     if (kv) {
       try {
@@ -1450,6 +1457,7 @@ async function saveBotConfig(config) {
         console.log("✅ Configuración guardada en Vercel KV");
         // También guardar en memoria como backup
         global.botConfig = config;
+        console.log("✅ Configuración también guardada en memoria como backup");
         return true;
       } catch (kvError) {
         console.warn("⚠️ Error al guardar en KV (usando memoria):", kvError.message);
@@ -1935,8 +1943,13 @@ app.post("/webhook", async (req, res) => {
     await sendTelegramMessage(chatId, response);
     console.log("✅ Respuesta enviada exitosamente");
 
-    // 5. Guardar mensaje en historial
+    // 5. Guardar mensaje en historial ANTES de otras operaciones
+    console.log(`💾 Guardando conversación en historial...`);
     saveMessage(chatId, userText, response);
+    
+    // Verificar que se guardó correctamente
+    const savedHistory = getHistory(chatId);
+    console.log(`✅ Historial verificado: ${savedHistory.length} mensajes guardados`);
 
     // 6. Generar resumen periódicamente (cada N mensajes)
     const messagesAfterSave = getHistory(chatId);
@@ -2012,13 +2025,18 @@ app.post("/webhook", async (req, res) => {
       }
     }
 
-    // 8. Generar entrada de diario diario si es un nuevo día
+    // 8. Generar entrada de diario diario si es un nuevo día O si es la primera vez
     try {
       const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
       const lastDiaryDateForChat = lastDiaryDate.get(chatId);
       
-      if (lastDiaryDateForChat !== today && messagesAfterSave.length > 0) {
-        console.log(`📅 Nuevo día detectado (último diario: ${lastDiaryDateForChat}, hoy: ${today}). Generando entrada de diario...`);
+      // Generar diario si:
+      // 1. Es un día diferente al último diario, O
+      // 2. No hay diario previo (primera vez)
+      const shouldGenerateDiary = lastDiaryDateForChat !== today;
+      
+      if (shouldGenerateDiary && messagesAfterSave.length > 0) {
+        console.log(`📅 Generando entrada de diario (último: ${lastDiaryDateForChat || 'ninguno'}, hoy: ${today})...`);
         
         // Obtener mensajes de hoy
         const todayMessages = messagesAfterSave.filter(msg => {
@@ -2026,22 +2044,43 @@ app.post("/webhook", async (req, res) => {
           return msgDate === today;
         });
         
+        console.log(`   📊 Mensajes de hoy: ${todayMessages.length} de ${messagesAfterSave.length} totales`);
+        
         if (todayMessages.length > 0) {
+          // Generar en background (no bloqueante)
           generateDailyDiaryEntry(chatId, todayMessages, today)
             .then(async (diaryEntry) => {
               if (diaryEntry) {
-                await saveDailyDiaryEntry(chatId, diaryEntry);
+                await saveDailyDiaryEntry(chatId, diaryEntry, today);
                 lastDiaryDate.set(chatId, today);
+                
+                // Guardar fecha en KV
+                if (kv) {
+                  try {
+                    await kv.set(`daily:diary:date:${chatId}`, today);
+                  } catch (err) {
+                    console.warn("⚠️ Error al guardar fecha de diario en KV:", err.message);
+                  }
+                }
+                
                 console.log(`✅ Entrada de diario guardada para ${today}`);
+              } else {
+                console.warn("⚠️ generateDailyDiaryEntry devolvió null");
               }
             })
             .catch(err => {
               console.error("❌ Error al generar entrada de diario:", err);
+              console.error("Stack:", err.stack);
             });
+        } else {
+          console.log(`ℹ️ No hay mensajes de hoy aún (todos son anteriores)`);
         }
+      } else {
+        console.log(`ℹ️ Diario ya existe para hoy (${today}). No se generará nuevo diario hasta mañana.`);
       }
     } catch (diaryError) {
       console.warn("⚠️ Error al verificar/generar diario (continuando):", diaryError.message);
+      console.error("Stack:", diaryError.stack);
     }
 
     res.sendStatus(200);
@@ -2320,7 +2359,15 @@ async function generateResponse(message, history, chatId) {
 // ========================
 function saveMessage(chatId, userText, botResponse) {
   try {
-    console.log(`💾 Guardando mensaje en historial para Chat ID: ${chatId}`);
+    console.log(`\n💾 ========== GUARDANDO MENSAJE ==========`);
+    console.log(`   Chat ID: ${chatId}`);
+    console.log(`   Usuario: ${userText?.substring(0, 50)}...`);
+    console.log(`   Bot: ${botResponse?.substring(0, 50)}...`);
+    
+    if (!chatId) {
+      console.error("❌ ERROR: chatId es null/undefined, no se puede guardar");
+      return;
+    }
     
     if (!conversationHistory.has(chatId)) {
       conversationHistory.set(chatId, []);
@@ -2328,32 +2375,43 @@ function saveMessage(chatId, userText, botResponse) {
     }
 
     const messages = conversationHistory.get(chatId);
-    messages.push({
+    const newMessage = {
       user: userText,
       bot: botResponse,
       timestamp: new Date().toISOString(),
-    });
+    };
+    
+    messages.push(newMessage);
+    console.log(`   📝 Mensaje añadido a historial en memoria`);
 
     // Mantener solo los últimos N mensajes
     if (messages.length > MAX_HISTORY_MESSAGES) {
       const removed = messages.shift(); // Eliminar el más antiguo
-      console.log(`   ⚠️ Historial lleno, eliminando mensaje más antiguo (${messages.length - MAX_HISTORY_MESSAGES + 1} mensajes guardados)`);
+      console.log(`   ⚠️ Historial lleno, eliminando mensaje más antiguo`);
     }
 
     conversationHistory.set(chatId, messages);
+    console.log(`   ✅ Historial actualizado en memoria: ${messages.length} mensajes totales`);
     
     // Guardar en Vercel KV si está disponible (no bloquear si falla)
     if (kv && chatId) {
-      saveHistoryToKV(chatId, messages).catch(err => {
-        console.warn(`⚠️ Error al guardar historial en KV (continuando sin KV):`, err.message);
-        // No re-lanzar el error para que no interrumpa el flujo
-      });
+      saveHistoryToKV(chatId, messages)
+        .then(() => {
+          console.log(`   ✅ Historial guardado en Vercel KV exitosamente`);
+        })
+        .catch(err => {
+          console.warn(`   ⚠️ Error al guardar historial en KV (continuando sin KV):`, err.message);
+          // No re-lanzar el error para que no interrumpa el flujo
+        });
+    } else {
+      console.log(`   ℹ️ Vercel KV no disponible (kv=${!!kv}, chatId=${!!chatId}), guardado solo en memoria`);
     }
     
-    console.log(`   ✅ Mensaje guardado. Total mensajes en historial: ${messages.length}`);
+    console.log(`   ✅ Mensaje guardado correctamente. Total: ${messages.length} mensajes\n`);
   } catch (error) {
     console.error("❌ Error al guardar mensaje en historial:", error);
-    console.error(error.stack);
+    console.error("Stack:", error.stack);
+    // No lanzar el error para no interrumpir el flujo
   }
 }
 
