@@ -1435,16 +1435,38 @@ No tienes que forzar nada, solo escucharte.
 
 async function saveBotConfig(config) {
   try {
+    // Intentar guardar en KV si está disponible y configurado correctamente
     if (kv) {
-      await kv.set("bot:config", config);
-      return true;
+      try {
+        await kv.set("bot:config", config);
+        console.log("✅ Configuración guardada en Vercel KV");
+        // También guardar en memoria como backup
+        global.botConfig = config;
+        return true;
+      } catch (kvError) {
+        console.warn("⚠️ Error al guardar en KV (usando memoria):", kvError.message);
+        // Si KV falla, continuar con almacenamiento en memoria
+        // No lanzar el error, solo guardar en memoria
+      }
     }
-    // Si no hay KV, usar variable global (solo en memoria)
+    
+    // Si no hay KV o falló, usar variable global (solo en memoria)
+    // Esto persiste durante la sesión del servidor pero se pierde al reiniciar
     global.botConfig = config;
+    console.log("✅ Configuración guardada en memoria (local)");
+    console.warn("⚠️ ADVERTENCIA: La configuración se guarda en memoria. Se perderá al reiniciar el servidor. Para persistencia, configura Vercel KV.");
     return true;
   } catch (error) {
-    console.error("Error al guardar configuración:", error);
-    throw error;
+    console.error("❌ Error crítico al guardar configuración:", error);
+    // Intentar guardar en memoria de todas formas
+    try {
+      global.botConfig = config;
+      console.log("✅ Configuración guardada en memoria como fallback");
+      return true;
+    } catch (memoryError) {
+      console.error("❌ Error incluso al guardar en memoria:", memoryError);
+      throw error; // Solo lanzar error si todo falla
+    }
   }
 }
 
