@@ -1,5 +1,6 @@
 // Bot Psicólogo Virtual para Telegram
 // Alojado en Vercel con OpenAI GPT
+// Version 2.2 - Con sistema completo de memoria
 
 const express = require("express");
 const axios = require("axios");
