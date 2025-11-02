@@ -30,10 +30,17 @@ let put = null;
 let del = null;
 let list = null;
 try {
-  const { kv: kvClient } = require("@vercel/kv");
-  kv = kvClient;
+  // Verificar que las variables de entorno estén configuradas antes de inicializar
+  if (process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN) {
+    const { kv: kvClient } = require("@vercel/kv");
+    kv = kvClient;
+    console.log("✅ Vercel KV inicializado correctamente");
+  } else {
+    console.warn("⚠️ Vercel KV no configurado (faltan variables KV_REST_API_URL o KV_REST_API_TOKEN), usando almacenamiento en memoria");
+    console.warn("   La configuración se guardará en memoria y se perderá al reiniciar el servidor");
+  }
 } catch (e) {
-  console.warn("⚠️ Vercel KV no disponible, usando almacenamiento en memoria");
+  console.warn("⚠️ Vercel KV no disponible, usando almacenamiento en memoria:", e.message);
 }
 
 try {
@@ -1502,10 +1509,32 @@ app.post("/api/config", requireAuth, async (req, res) => {
       welcomeMessage: req.body.welcomeMessage || "",
       botVersion: req.body.botVersion || "V.1.1"
     };
+    
     await saveBotConfig(config);
-    res.json({ success: true, config });
+    
+    // Determinar el método de almacenamiento usado
+    const storageMethod = kv ? "Vercel KV" : "memoria local";
+    const warning = !kv ? "⚠️ Nota: La configuración se guarda en memoria local. Se perderá al reiniciar el servidor. Para persistencia permanente, configura Vercel KV en tu proyecto Vercel." : "";
+    
+    res.json({ 
+      success: true, 
+      message: `Configuración guardada exitosamente (almacenada en: ${storageMethod})`,
+      warning: warning,
+      storage: storageMethod,
+      config: config
+    });
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error("Error al guardar configuración:", error);
+    // Si es un error de KV pero se guardó en memoria, informarlo pero no fallar
+    if (error.message && error.message.includes("KV")) {
+      res.json({ 
+        success: true, 
+        warning: "⚠️ La configuración se guardó en memoria local. Vercel KV no está configurado. La configuración se perderá al reiniciar el servidor.",
+        storage: "memoria local"
+      });
+    } else {
+      res.status(500).json({ error: error.message });
+    }
   }
 });
 
