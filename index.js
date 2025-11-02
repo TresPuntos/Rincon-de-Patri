@@ -1287,15 +1287,23 @@ async function getBotConfig() {
   try {
     if (kv) {
       const config = await kv.get("bot:config");
-      if (config) return config;
+      if (config) {
+        // Asegurar que el prompt incluye la documentación si está disponible
+        if (config.systemPrompt && instructionDocs && instructionDocs.trim().length > 0) {
+          // Si el prompt no incluye ya la documentación, añadirla
+          if (!config.systemPrompt.includes("DOCUMENTACIÓN DISPONIBLE")) {
+            config.systemPrompt = config.systemPrompt + `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+          }
+        }
+        return config;
+      }
     }
     // Si no hay KV, usar variable global (si existe)
     if (global.botConfig) {
       return global.botConfig;
     }
-    // Configuración por defecto
-    return {
-      systemPrompt: `Rol:
+    // Configuración por defecto con documentación incluida
+    let defaultSystemPrompt = `Rol:
 
 Eres un psicólogo virtual especializado en acompañamiento emocional, estrés crónico y alta sensibilidad. Atiendes a Patri, una mujer diagnosticada con lupus y alta sensibilidad emocional (PAS).
 
@@ -1400,7 +1408,15 @@ Te propongo algo sencillo: cierra los ojos un minuto y coloca tu mano sobre el p
 
 No tienes que forzar nada, solo escucharte.
 
-¿Cómo te has sentido después de hacerlo?`,
+¿Cómo te has sentido después de hacerlo?`;
+
+    // Añadir documentación si está disponible
+    if (instructionDocs && instructionDocs.trim().length > 0) {
+      defaultSystemPrompt += `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+    }
+
+    return {
+      systemPrompt: defaultSystemPrompt,
       model: "gpt-3.5-turbo",
       maxTokens: 400,
       temperature: 0.7,
