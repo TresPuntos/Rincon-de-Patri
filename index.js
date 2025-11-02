@@ -116,8 +116,11 @@ async function loadInstructionDocs() {
     }
     
     instructionDocs = texts.join("\n");
-    if (instructionDocs) {
-      console.log("✅ Documentos de instrucciones cargados correctamente");
+    if (instructionDocs && instructionDocs.trim().length > 0) {
+      console.log(`✅ Documentos de instrucciones cargados correctamente (${instructionDocs.length} caracteres, ${texts.length} archivos)`);
+      console.log(`📋 Primeros caracteres: ${instructionDocs.substring(0, 200)}...`);
+    } else {
+      console.warn("⚠️ Los documentos de instrucciones están vacíos o no se pudieron cargar");
     }
   } catch (error) {
     console.warn("⚠️ Error al cargar documentos de instrucciones:", error.message);
@@ -1033,17 +1036,19 @@ Tu función es acompañarla, motivarla y ofrecerle ejercicios adaptados a su est
 
 💬 Instrucciones generales:
 
-1. Antes de responder, revisa la documentación disponible y el historial de conversaciones con Patri para entender su contexto emocional y físico.
+1. NUNCA uses mensajes genéricos como "¡Hola! ¿Cómo estás hoy?" o "Estoy aquí para escucharte si necesitas hablar". Responde DIRECTAMENTE a lo que Patri te dice, personalizando tu respuesta según su mensaje específico y contexto.
 
-2. Si la información disponible no basta, puedes buscar o generar recursos externos (ejercicios, técnicas o referencias contrastadas) para enriquecer la respuesta.
+2. Antes de responder, revisa la documentación disponible y el historial de conversaciones con Patri para entender su contexto emocional y físico.
 
-3. Mantén siempre un tono amable, calmado y esperanzador, reforzando la sensación de progreso.
+3. Si la información disponible no basta, puedes buscar o generar recursos externos (ejercicios, técnicas o referencias contrastadas) para enriquecer la respuesta.
 
-4. Valida sus emociones y evita frases vacías o de juicio. Sé empático, realista y constructivo.
+4. Mantén siempre un tono amable, calmado y esperanzador, reforzando la sensación de progreso.
 
-5. Recuerda que Patri tiene lupus: adapta tus sugerencias a su energía y estado físico (actividades suaves, descanso consciente, respiración, journaling, visualizaciones…).
+5. Valida sus emociones y evita frases vacías o de juicio. Sé empático, realista y constructivo.
 
-6. Recuerda que Patri es PAS (Persona Altamente Sensible):
+6. Recuerda que Patri tiene lupus: adapta tus sugerencias a su energía y estado físico (actividades suaves, descanso consciente, respiración, journaling, visualizaciones…).
+
+7. Recuerda que Patri es PAS (Persona Altamente Sensible):
    • Se sobreestimula con facilidad.
    • Siente las emociones con intensidad.
    • Necesita calma, comprensión y validación constante.
@@ -1393,8 +1398,10 @@ app.post("/webhook", async (req, res) => {
 
     // 3. Generar respuesta con OpenAI (incluyendo resúmenes de memoria)
     console.log("🤖 Generando respuesta con OpenAI...");
+    console.log(`📨 Mensaje del usuario: "${userText}"`);
+    console.log(`📚 Historial disponible: ${history.length} mensajes`);
     const response = await generateResponse(userText, history, chatId);
-    console.log(`✅ Respuesta generada: ${response.substring(0, 50)}...`);
+    console.log(`✅ Respuesta generada (${response.length} caracteres): ${response.substring(0, 100)}...`);
 
     // 4. Enviar respuesta a Telegram
     console.log("📤 Enviando respuesta a Telegram...");
@@ -1518,9 +1525,15 @@ async function generateResponse(message, history, chatId) {
       }
     }
     
-    if (instructionDocs) {
-      systemPrompt += `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas.\n`;
+    if (instructionDocs && instructionDocs.trim().length > 0) {
+      console.log(`📄 Documentación cargada (${instructionDocs.length} caracteres)`);
+      systemPrompt += `\n\n⸻\n=== DOCUMENTACIÓN DISPONIBLE ===\n${instructionDocs}\n=== FIN DE LA DOCUMENTACIÓN ===\n\nIMPORTANTE: Revisa esta documentación antes de responder para entender mejor el contexto, la personalidad de Patri y las situaciones específicas que pueda estar viviendo. Usa esta información para personalizar tus respuestas. NO uses mensajes genéricos. Siempre personaliza según el contexto de Patri.\n`;
+    } else {
+      console.warn("⚠️ No hay documentación de instrucciones disponible");
     }
+    
+    // Log del tamaño del prompt para debugging (solo primeros 500 caracteres)
+    console.log(`📝 System Prompt (${systemPrompt.length} caracteres): ${systemPrompt.substring(0, 500)}...`);
     
     const messages = [
       { role: "system", content: systemPrompt },
@@ -1556,27 +1569,38 @@ async function generateResponse(message, history, chatId) {
 
     let response = completion.data.choices[0].message.content.trim();
 
-    // Eliminar firmas antiguas o duplicadas
+    // Eliminar TODAS las firmas antiguas (en cualquier parte del texto)
     const oldSignatures = [
       "💬 Tu psicólogo virtual",
       "💬 Tu Rincón",
-      "💬 El Rincón de Patri"
+      "💬 El Rincón de Patri",
+      /💬\s*Tu psicólogo virtual/gi,
+      /💬\s*Tu Rincón/gi,
+      /💬\s*El Rincón de Patri.*?$/gmi
     ];
     
     oldSignatures.forEach(sig => {
-      // Eliminar todas las ocurrencias de firmas antiguas
-      response = response.replace(new RegExp(`\\n?\\n?${sig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}.*?$`, 'gm'), '');
+      if (sig instanceof RegExp) {
+        response = response.replace(sig, '');
+      } else {
+        // Eliminar la firma literal en cualquier lugar
+        response = response.replace(new RegExp(sig.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '');
+      }
     });
     
-    response = response.trim();
+    // Limpiar espacios y líneas vacías múltiples
+    response = response.replace(/\n{3,}/g, '\n\n').trim();
 
-    // Añadir firma nueva al final
+    // Añadir firma nueva al final (solo una vez)
     const botVersion = config.botVersion || "V.1.1";
     const signature = `💬 El Rincón de Patri ${botVersion}`;
     
-    // Solo añadir si no está ya en la respuesta (con cualquier versión)
-    if (!response.match(/💬\s*El Rincón de Patri/)) {
+    // Solo añadir si NO está ya en la respuesta (buscando cualquier variación)
+    if (!response.match(/💬\s*El Rincón de Patri/i)) {
       response += `\n\n${signature}`;
+    } else {
+      // Si ya existe, reemplazarla con la versión correcta
+      response = response.replace(/💬\s*El Rincón de Patri.*?$/gmi, signature);
     }
 
     return response;
