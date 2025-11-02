@@ -133,6 +133,7 @@ app.get("/", (req, res) => {
   res.json({ 
     status: "ok", 
     message: "Bot Psicólogo Virtual está funcionando",
+    version: "2.0",
     timestamp: new Date().toISOString()
   });
 });
