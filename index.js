@@ -582,18 +582,12 @@ const adminHTML = `<!DOCTYPE html>
             </div>
             <div class="section">
                 <h2>🏥 Historial Clínico de Patri</h2>
-                <div class="form-group">
-                    <label>Chat ID</label>
-                    <input type="text" id="chatIdInput" placeholder="Introduce el Chat ID de Telegram" />
-                    <small style="color: #666;">Para obtener el Chat ID, envía un mensaje al bot y revisa los logs</small>
-                </div>
-                <button class="btn" onclick="viewClinicalHistory()">📋 Ver Historial Clínico</button>
-                <button class="btn" onclick="downloadClinicalHistory()" style="background: #28a745; margin-top: 10px;">📥 Descargar como Markdown</button>
-                <div id="clinicalHistoryContainer" style="margin-top: 30px; display: none;">
-                    <div style="background: #fff3cd; border: 1px solid #ffc107; border-radius: 10px; padding: 20px; margin-bottom: 20px;">
-                        <h3>📋 Historial Clínico</h3>
-                        <div id="clinicalHistoryContent" style="margin-top: 15px; white-space: pre-wrap; font-family: monospace; line-height: 1.6;"></div>
-                    </div>
+                <div style="text-align: center; padding: 30px;">
+                    <p style="font-size: 18px; color: #666; margin-bottom: 25px;">Accede directamente al historial clínico completo de Patri</p>
+                    <a href="/historial" target="_blank" class="btn" style="text-decoration: none; display: inline-block; max-width: 400px;">
+                        🏥 Ver Historial Clínico de Patri
+                    </a>
+                    <p style="margin-top: 15px; color: #999; font-size: 14px;">Se abrirá en una nueva pestaña</p>
                 </div>
             </div>
             <div class="section">
